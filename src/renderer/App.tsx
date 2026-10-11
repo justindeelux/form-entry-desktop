@@ -39,6 +39,7 @@ const errors: Record<string, string> = {
   SCHEDULE_SEND_FAILED: 'Lượt gửi theo lịch đã dừng vì Form từ chối dữ liệu. Kiểm tra Chrome và tiến trình.',
   DATA_NOT_LOADED: 'Tải dữ liệu và kiểm tra mapping trước khi bắt đầu lịch.',
   BUSY: 'Một thao tác đang chạy. Hãy chờ hoàn tất.',
+  UPDATE_UNAVAILABLE: 'Cập nhật tự động chỉ dùng được với bản Windows đã cài bằng Setup.exe. Bản portable cần tải lại thủ công.',
 };
 export function App() {
   const [initial] = useState(() => readSettings(localStorage));
@@ -218,6 +219,10 @@ export function App() {
       <Checkbox label="Thu gọn Chrome xuống taskbar / Dock" checked={minimizeChrome} onChange={event => setMinimizeChrome(event.currentTarget.checked)} disabled={preferencesBusy} />
       <Text size="xs" c="dimmed">Cửa sổ đăng nhập Google luôn hiển thị.</Text>
       <Button leftSection={<Save size={16} aria-hidden="true" />} onClick={savePreferences} loading={preferencesBusy}>Lưu cài đặt</Button>
+      <Button leftSection={<Download size={16} aria-hidden="true" />} variant="light" disabled={locked || preferencesBusy} onClick={async () => {
+        try { const result = await window.desktop.checkForUpdates(); if (!result.ok) { setPreferencesOpen(false); showError(result.error); } }
+        catch { setPreferencesOpen(false); setError('Không kiểm tra được cập nhật.'); }
+      }}>Kiểm tra cập nhật</Button>
       <Button leftSection={<Trash2 size={16} aria-hidden="true" />} color="red" variant="light" disabled={locked || preferencesBusy} onClick={() => { setPreferencesOpen(false); setResetTarget('profile'); }}>Xóa profile</Button></Stack>
     </Modal>
     <Modal opened={!!resetTarget} onClose={() => { if (!locked) setResetTarget(undefined); }} title={resetTarget === 'profile' ? 'Xác nhận xóa profile' : resetTarget === 'url' ? 'Xác nhận Reset URL' : 'Xác nhận Reset mapping'} closeOnClickOutside={!locked} closeOnEscape={!locked} withCloseButton={!locked}>

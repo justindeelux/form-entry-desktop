@@ -1,11 +1,11 @@
 {
   "name": "form-entry-desktop",
   "productName": "Form Entry Desktop",
-  "version": "0.2.13",
+  "version": "0.3.0",
   "description": "Minimal Google Sheets to Google Forms desktop tool",
   "private": true,
   "author": "Form Entry Desktop",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "main": "dist/main/app.js",
   "scripts": {
     "build": "tsc -p tsconfig.node.json && vite build",
@@ -23,6 +23,7 @@
     "@mantine/hooks": "9.7.1",
     "@xyflow/react": "12.12.0",
     "better-sqlite3": "13.0.3",
+    "electron-squirrel-startup": "1.0.1",
     "playwright-core": "1.64.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -30,6 +31,7 @@
   },
   "devDependencies": {
     "@electron-forge/cli": "8.0.1",
+    "@electron-forge/maker-squirrel": "8.0.1",
     "@electron-forge/maker-zip": "8.0.1",
     "@electron-forge/plugin-auto-unpack-natives": "8.0.1",
     "@types/better-sqlite3": "9.6.0",
@@ -42,5 +44,9 @@
     "typescript": "7.0.2",
     "vite": "8.3.4",
     "vitest": "5.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justindeelux/form-entry-desktop.git"
   }
 }
