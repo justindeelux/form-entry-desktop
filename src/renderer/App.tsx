@@ -2,6 +2,7 @@ import { Settings as SettingsIcon, RefreshCw, CalendarClock, Square, Trash2, Rot
 import { useEffect, useState } from 'react';
 import { Alert, Button, Card, Checkbox, Collapse, Container, Image, Modal, NumberInput, Group, Progress as ProgressBar, SegmentedControl, Select, Stack, Text, TextInput, Title } from '@mantine/core';
 import appIcon from '../../assets/app-icon.png';
+import { version } from '../../package.json';
 import { scheduleRuleSchema, type ScheduleState } from '../shared/contracts';
 import type { DesktopApi, LoadedData, Progress, PendingSubmission, ValidationDetails } from '../shared/contracts';
 import { SheetDataTable } from './SheetDataTable';
@@ -196,7 +197,7 @@ export function App() {
   const remaining = Math.max(0, Math.ceil(((schedule.nextRunAt ?? clock) - clock) / 1000));
   const countdown = `${Math.floor(remaining / 3600)}:${String(Math.floor(remaining / 60) % 60).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`;
   return <Container fluid py="lg" style={{ minHeight: '100vh' }}><Stack gap="md">
-    <Group justify="space-between"><Group gap="sm" wrap="nowrap"><Image src={appIcon} w={48} h={48} alt="" aria-hidden="true" draggable={false} /><Title order={1} size="h2">Sheets → Google Form</Title></Group><Button leftSection={<SettingsIcon size={16} aria-hidden="true" />} color="red" variant="filled" disabled={locked} onClick={() => setPreferencesOpen(true)}>Cài đặt</Button></Group>
+    <Group justify="space-between"><Group gap="sm" wrap="nowrap"><Image src={appIcon} w={48} h={48} alt="" aria-hidden="true" draggable={false} /><Stack gap={0}><Title order={1} size="h2">Sheets → Google Form</Title><Text size="xs" c="dimmed">Phiên bản {version}</Text></Stack></Group><Button leftSection={<SettingsIcon size={16} aria-hidden="true" />} color="red" variant="filled" disabled={locked} onClick={() => setPreferencesOpen(true)}>Cài đặt</Button></Group>
     <Modal opened={scheduleOpen} onClose={() => { if (!scheduleBusy) setScheduleOpen(false); }} title="Đặt lịch gửi">
       <Stack gap="sm">
         {error && <Alert color="red" role="alert">{error}</Alert>}
