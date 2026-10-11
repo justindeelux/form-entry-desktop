@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const fake = vi.hoisted(() => ({
   listeners: {} as Record<string, (...args: unknown[]) => void>,
-  app: { isPackaged: true, getVersion: () => '0.3.0', quit: vi.fn() },
+  app: { isPackaged: true, quit: vi.fn() },
   updater: { setFeedURL: vi.fn(), checkForUpdates: vi.fn(), quitAndInstall: vi.fn(), on: vi.fn() },
   dialog: { showMessageBox: vi.fn() },
   exists: vi.fn(),
 }));
-vi.mock('electron', () => ({ app: fake.app, autoUpdater: fake.updater, dialog: fake.dialog }));
+vi.mock('electron', () => ({ app: fake.app, dialog: fake.dialog }));
+vi.mock('electron-updater', () => ({ autoUpdater: fake.updater }));
 vi.mock('node:fs', () => ({ existsSync: fake.exists }));
 import { createUpdater } from '../src/main/updater';
 const platform = process.platform;
@@ -15,7 +16,7 @@ beforeEach(() => {
   Object.defineProperty(process, 'platform', { value: 'win32' });
   fake.app.isPackaged = true; fake.exists.mockReturnValue(true);
   fake.updater.on.mockImplementation((event: string, listener: (...args: unknown[]) => void) => { fake.listeners[event] = listener; });
-  fake.updater.checkForUpdates.mockImplementation(() => {});
+  fake.updater.checkForUpdates.mockResolvedValue(null);
   fake.dialog.showMessageBox.mockResolvedValue({ response: 1 });
 });
 afterEach(() => { Object.defineProperty(process, 'platform', { value: platform }); vi.useRealTimers(); });
@@ -31,7 +32,8 @@ describe('installed Windows updater', () => {
   });
   it('uses the public release feed and avoids overlapping downloads', () => {
     const update = createUpdater(() => false);
-    expect(fake.updater.setFeedURL.mock.calls[0][0].url).toMatch(/https:\/\/update\.electronjs\.org\/justindeelux\/form-entry-desktop\/win32-\w+\/0\.3\.0/);
+    expect(fake.updater.setFeedURL).toHaveBeenCalledWith({ provider: 'github', owner: 'justindeelux', repo: 'form-entry-desktop' });
+    expect(fake.updater).toMatchObject({ autoInstallOnAppQuit: false, allowPrerelease: false, allowDowngrade: false });
     update.start(); update.check(true);
     expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(1);
     fake.listeners['error'](); update.check();
@@ -48,7 +50,7 @@ describe('installed Windows updater', () => {
     expect(fake.app.quit).toHaveBeenCalledOnce();
     expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
     update.finishQuit();
-    expect(fake.updater.quitAndInstall).toHaveBeenCalledOnce();
+    expect(fake.updater.quitAndInstall).toHaveBeenCalledWith(true, true);
   });
   it('rechecks busy state after the user accepts the update dialog', async () => {
     let busy = false;
@@ -66,6 +68,13 @@ describe('installed Windows updater', () => {
     expect(fake.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
     expect(fake.app.quit).not.toHaveBeenCalled();
   });
+  it('handles rejected update checks without an unhandled rejection', async () => {
+    fake.updater.checkForUpdates.mockRejectedValue(new Error('offline'));
+    const update = createUpdater(() => false);
+    update.check(true); await Promise.resolve();
+    expect(fake.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+    expect(fake.app.quit).not.toHaveBeenCalled();
+  });
   it('respects Later and allows a manual prompt again', async () => {
     const update = createUpdater(() => false);
     fake.listeners['update-downloaded'](); await Promise.resolve();
@@ -75,17 +84,15 @@ describe('installed Windows updater', () => {
     expect(fake.dialog.showMessageBox).toHaveBeenCalledTimes(2);
     expect(fake.app.quit).not.toHaveBeenCalled();
   });
-  it('defers first-run checks and cancels periodic checks on shutdown', async () => {
-    process.argv.push('--squirrel-firstrun');
-    try {
-      const update = createUpdater(() => false);
-      update.start();
-      expect(fake.updater.checkForUpdates).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
-      expect(fake.updater.checkForUpdates).toHaveBeenCalledOnce();
-      update.stop(); fake.listeners['update-not-available']();
-      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
-      expect(fake.updater.checkForUpdates).toHaveBeenCalledOnce();
-    } finally { process.argv.pop(); }
+  it('checks at startup and cancels periodic checks on shutdown', async () => {
+    const update = createUpdater(() => false);
+    update.start();
+    expect(fake.updater.checkForUpdates).toHaveBeenCalledOnce();
+    fake.listeners['update-not-available']();
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
+    update.stop(); fake.listeners['update-not-available']();
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
   });
 });

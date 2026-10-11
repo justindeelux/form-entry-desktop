@@ -1,9 +1,10 @@
-import { app, autoUpdater, dialog } from 'electron';
+import { app, dialog } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 export function createUpdater(isBusy: () => boolean, smoke = false) {
-  const supported = process.platform === 'win32' && app.isPackaged && !smoke && existsSync(resolve(dirname(process.execPath), '..', 'Update.exe'));
+  const supported = process.platform === 'win32' && app.isPackaged && !smoke && existsSync(resolve(dirname(process.execPath), 'Uninstall Form Entry Desktop.exe'));
   let checking = false, manual = false, downloaded = false, prompting = false, prompted = false, install = false;
   let timer: ReturnType<typeof setInterval> | undefined;
   async function notify() {
@@ -22,7 +23,7 @@ export function createUpdater(isBusy: () => boolean, smoke = false) {
     manual ||= userRequested;
     if (checking) return;
     checking = true;
-    try { autoUpdater.checkForUpdates(); }
+    try { void autoUpdater.checkForUpdates().catch(failed); }
     catch { failed(); }
   }
   function failed() {
@@ -32,8 +33,11 @@ export function createUpdater(isBusy: () => boolean, smoke = false) {
   }
   if (supported) {
     const { repository } = require('../../package.json');
-    const repo = new URL(repository.url).pathname.replace(/\.git$/, '');
-    autoUpdater.setFeedURL({ url: `https://update.electronjs.org${repo}/win32-${process.arch}/${app.getVersion()}` });
+    const [owner, repo] = new URL(repository.url).pathname.replace(/\.git$/, '').split('/').filter(Boolean);
+    autoUpdater.autoInstallOnAppQuit = false;
+    autoUpdater.allowPrerelease = false;
+    autoUpdater.allowDowngrade = false;
+    autoUpdater.setFeedURL({ provider: 'github', owner, repo });
     autoUpdater.on('error', failed);
     autoUpdater.on('update-not-available', () => {
       checking = false;
@@ -46,10 +50,10 @@ export function createUpdater(isBusy: () => boolean, smoke = false) {
     check,
     start() {
       if (!supported) return;
-      if (!process.argv.includes('--squirrel-firstrun')) check();
+      check();
       timer = setInterval(() => check(), 10 * 60 * 1000);
     },
     stop() { if (timer) clearInterval(timer); },
-    finishQuit() { if (install) autoUpdater.quitAndInstall(); else app.quit(); },
+    finishQuit() { if (install) autoUpdater.quitAndInstall(true, true); else app.quit(); },
   };
 }

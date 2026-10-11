@@ -36,26 +36,27 @@ jobs:
       - name: Install and check Windows app
         shell: pwsh
         run: |
-          $setup = (Resolve-Path 'out/make/squirrel.windows/x64/FormEntryDesktop-Setup.exe').Path
-          $install = Start-Process -FilePath $setup -ArgumentList '--silent' -PassThru
-          if (-not $install.WaitForExit(120000)) { throw 'Installer timed out' }
-          if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
-          Get-Process FormEntryDesktop -ErrorAction SilentlyContinue | ForEach-Object {
-            $_.CloseMainWindow() | Out-Null
-            if (-not $_.WaitForExit(30000)) { throw 'First launch did not close' }
-          }
-          $version = (Get-Content package.json | ConvertFrom-Json).version
-          $root = Join-Path $env:LOCALAPPDATA 'FormEntryDesktop'
-          if (-not (Test-Path (Join-Path $root 'Update.exe'))) { throw 'Missing Squirrel updater' }
-          $exe = Join-Path $root "app-$version/FormEntryDesktop.exe"
-          if (-not (Test-Path $exe)) { throw 'Missing installed executable' }
+          $setup = (Get-ChildItem 'out/make/nsis/*Setup-*.exe').FullName
+          $root = Join-Path $env:RUNNER_TEMP 'Custom Install/Form Entry Desktop'
+          ./tests/installer-wizard.ps1 -Setup $setup -InstallDir $root
+          $exe = Join-Path $root 'FormEntryDesktop.exe'
+          $uninstaller = Join-Path $root 'Uninstall Form Entry Desktop.exe'
+          if (-not (Test-Path $exe)) { throw 'Missing executable in custom install folder' }
+          if (-not (Test-Path $uninstaller)) { throw 'Missing NSIS uninstaller' }
+          if (-not (Test-Path (Join-Path $root 'resources/app-update.yml'))) { throw 'Missing updater configuration' }
           node tests/packaged-smoke.cjs $exe
           if ($LASTEXITCODE -ne 0) { throw 'Installed app smoke check failed' }
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @('/S', "_?=$root") -PassThru
+          if (-not $uninstall.WaitForExit(120000)) { throw 'Uninstaller timed out' }
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstall failed: $($uninstall.ExitCode)" }
+          if (Test-Path $exe) { throw 'Uninstall did not remove the installed app' }
       - uses: actions/upload-artifact@v7
         with:
           name: Form-Entry-Desktop-Windows-x64
           path: |
-            out/make/squirrel.windows/x64/*
+            out/make/nsis/*.exe
+            out/make/nsis/*.blockmap
+            out/make/nsis/latest.yml
             out/make/zip/win32/x64/*.zip
           if-no-files-found: error
 
@@ -77,7 +78,7 @@ jobs:
         shell: pwsh
         run: |
           $assets = @(Get-ChildItem release -Recurse -File | ForEach-Object { $_.FullName })
-          foreach ($pattern in @('RELEASES', '*-full.nupkg', '*Setup.exe', '*.zip')) {
+          foreach ($pattern in @('latest.yml', '*Setup-*.exe', '*.blockmap', '*.zip')) {
             if (-not (Get-ChildItem release -Recurse -File -Filter $pattern)) { throw "Missing release asset: $pattern" }
           }
           gh release create $env:GITHUB_REF_NAME @assets --verify-tag --draft --title "Form Entry Desktop $env:GITHUB_REF_NAME" --generate-notes
