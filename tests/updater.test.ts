@@ -32,6 +32,7 @@ describe('installed Windows updater', () => {
   });
   it('uses the public release feed and avoids overlapping downloads', () => {
     const update = createUpdater(() => false);
+    expect(fake.exists).toHaveBeenCalledWith(expect.stringContaining('Uninstall FormEntryDesktop.exe'));
     expect(fake.updater.setFeedURL).toHaveBeenCalledWith({ provider: 'github', owner: 'justindeelux', repo: 'form-entry-desktop' });
     expect(fake.updater).toMatchObject({ autoInstallOnAppQuit: false, allowPrerelease: false, allowDowngrade: false });
     update.start(); update.check(true);

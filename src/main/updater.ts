@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 export function createUpdater(isBusy: () => boolean, smoke = false) {
-  const supported = process.platform === 'win32' && app.isPackaged && !smoke && existsSync(resolve(dirname(process.execPath), 'Uninstall Form Entry Desktop.exe'));
+  const supported = process.platform === 'win32' && app.isPackaged && !smoke && existsSync(resolve(dirname(process.execPath), 'Uninstall FormEntryDesktop.exe'));
   let checking = false, manual = false, downloaded = false, prompting = false, prompted = false, install = false;
   let timer: ReturnType<typeof setInterval> | undefined;
   async function notify() {
