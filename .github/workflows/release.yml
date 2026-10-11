@@ -48,6 +48,7 @@ jobs:
           if (-not (Test-Path (Join-Path $root 'resources/app-update.yml'))) { throw 'Missing updater configuration' }
           node tests/packaged-smoke.cjs $exe
           if ($LASTEXITCODE -ne 0) { throw 'Installed app smoke check failed' }
+          ./tests/installer-wizard.ps1 -Setup $setup -InstallDir $root -Update
           $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @('/S', "_?=$root") -PassThru
           if (-not $uninstall.WaitForExit(120000)) { throw 'Uninstaller timed out' }
           if ($uninstall.ExitCode -ne 0) { throw "Uninstall failed: $($uninstall.ExitCode)" }

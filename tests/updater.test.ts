@@ -21,8 +21,45 @@ beforeEach(() => {
 });
 afterEach(() => { Object.defineProperty(process, 'platform', { value: platform }); vi.useRealTimers(); });
 describe('installed Windows updater', () => {
+  it('publishes checking, download progress and readiness and retains the latest snapshot', () => {
+    const changed = vi.fn();
+    const update = createUpdater(() => true, false, changed);
+    expect(update.state()).toEqual({ status: 'idle' });
+    update.check(true);
+    expect(changed).toHaveBeenLastCalledWith({ status: 'checking' });
+    fake.listeners['update-available']({ version: '0.4.2' });
+    expect(update.state()).toEqual({ status: 'downloading', version: '0.4.2', percent: 0 });
+    fake.listeners['download-progress']({ percent: 37.5 });
+    expect(changed).toHaveBeenLastCalledWith({ status: 'downloading', version: '0.4.2', percent: 37.5 });
+    update.check(true);
+    expect(fake.updater.checkForUpdates).toHaveBeenCalledOnce();
+    expect(update.state().status).toBe('downloading');
+    fake.listeners['update-downloaded']({ version: '0.4.2' });
+    expect(update.state()).toEqual({ status: 'downloaded', version: '0.4.2', percent: 100 });
+    expect(fake.dialog.showMessageBox).not.toHaveBeenCalled();
+    const snapshot = update.state(); snapshot.status = 'error';
+    expect(update.state().status).toBe('downloaded');
+  });
+  it('clears loading after errors and no-update responses and permits retry', () => {
+    const update = createUpdater(() => false);
+    update.check(); fake.listeners['error']();
+    expect(update.state()).toEqual({ status: 'error' });
+    update.check();
+    expect(update.state()).toEqual({ status: 'checking' });
+    fake.listeners['update-not-available']();
+    expect(update.state()).toEqual({ status: 'not-available' });
+    expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
+  });
+  it('bounds download percentages for the progress bar', () => {
+    const update = createUpdater(() => true);
+    for (const [input, expected] of [[-1, 0], [101, 100], [NaN, 0]]) {
+      fake.listeners['download-progress']({ percent: input });
+      expect(update.state().percent).toBe(expected);
+    }
+  });
   it('excludes portable, development and smoke builds', () => {
     fake.exists.mockReturnValue(false);
+    expect(createUpdater(() => false).state()).toEqual({ status: 'unsupported' });
     expect(() => createUpdater(() => false).check(true)).toThrow('UPDATE_UNAVAILABLE');
     fake.exists.mockReturnValue(true); fake.app.isPackaged = false;
     expect(() => createUpdater(() => false).check()).toThrow('UPDATE_UNAVAILABLE');
@@ -49,9 +86,10 @@ describe('installed Windows updater', () => {
     busy = false; fake.dialog.showMessageBox.mockResolvedValue({ response: 0 });
     update.check(); await vi.advanceTimersByTimeAsync(0);
     expect(fake.app.quit).toHaveBeenCalledOnce();
+    expect(update.state().status).toBe('installing');
     expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
     update.finishQuit();
-    expect(fake.updater.quitAndInstall).toHaveBeenCalledWith(true, true);
+    expect(fake.updater.quitAndInstall).toHaveBeenCalledWith(false, true);
   });
   it('rechecks busy state after the user accepts the update dialog', async () => {
     let busy = false;

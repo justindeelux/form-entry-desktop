@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Setup, [Parameter(Mandatory=$true)][string]$InstallDir)
+param([Parameter(Mandatory=$true)][string]$Setup, [Parameter(Mandatory=$true)][string]$InstallDir, [switch]$Update)
 $ErrorActionPreference = 'Stop'
 Add-Type @'
 using System;
@@ -14,7 +14,7 @@ public static class WizardUI {
   [DllImport("user32.dll", EntryPoint="SendMessageW", CharSet=CharSet.Unicode)] public static extern IntPtr SetText(IntPtr hwnd, uint msg, IntPtr wparam, string text);
 }
 '@
-$process = Start-Process -FilePath $Setup -PassThru
+$process = if ($Update) { Start-Process -FilePath $Setup -ArgumentList @('--updated', '--force-run') -PassThru } else { Start-Process -FilePath $Setup -PassThru }
 function Find-Control([string]$Text, [string]$Class = '') {
   $deadline = (Get-Date).AddSeconds(120)
   do {
@@ -48,14 +48,19 @@ function Click-Control([string]$Text) {
   [void][WizardUI]::SendMessage($handle, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
 }
 try {
-  [void](Find-Control 'Welcome to Form Entry Desktop Setup')
-  Write-Output 'Welcome page verified'
-  Click-Control '^Next'
-  [void](Find-Control 'Choose Install Location')
-  $edit = Find-Control '.*' 'Edit'
-  [void][WizardUI]::SetText($edit, 0x000C, [IntPtr]::Zero, $InstallDir)
-  Write-Output 'Custom installation directory selected'
-  Click-Control '^Install$'
+  if ($Update) {
+    [void](Find-Control '^Installing$')
+    Write-Output 'Visible update installation progress verified'
+  } else {
+    [void](Find-Control 'Welcome to Form Entry Desktop Setup')
+    Write-Output 'Welcome page verified'
+    Click-Control '^Next'
+    [void](Find-Control 'Choose Install Location')
+    $edit = Find-Control '.*' 'Edit'
+    [void][WizardUI]::SetText($edit, 0x000C, [IntPtr]::Zero, $InstallDir)
+    Write-Output 'Custom installation directory selected'
+    Click-Control '^Install$'
+  }
   [void](Find-Control 'Completing.*Setup')
   $launch = Find-Control '^Run Form Entry Desktop$' 'Button'
   $checked = [WizardUI]::SendMessage($launch, 0x00F0, [IntPtr]::Zero, [IntPtr]::Zero)
