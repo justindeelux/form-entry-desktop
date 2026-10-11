@@ -20,9 +20,9 @@ import { createUpdater } from './updater';
 
 const smoke = process.argv.includes('--smoke-test');
 if (smoke) app.setPath('userData', process.env.FORM_ENTRY_SMOKE_DATA ?? mkdtempSync(join(tmpdir(), 'form-entry-smoke-')));
-if (require('electron-squirrel-startup') || !app.requestSingleInstanceLock()) app.quit();
+if (!app.requestSingleInstanceLock()) app.quit();
 else void app.whenReady().then(async () => {
-  if (process.platform === 'win32') app.setAppUserModelId('com.squirrel.FormEntryDesktop.FormEntryDesktop');
+  if (process.platform === 'win32') app.setAppUserModelId('local.form-entry.desktop');
   const dataPath = app.getPath('userData');
   mkdirSync(dataPath, { recursive: true, mode: 0o700 });
   chmodSync(dataPath, 0o700);

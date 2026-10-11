@@ -43,7 +43,7 @@ For Windows x64, run on Windows:
 npm run make -- --platform=win32 --arch=x64
 ```
 
-Packaged apps are in `out/`. Windows installers are in `out/make/squirrel.windows/x64/`; run `FormEntryDesktop-Setup.exe` to install. Portable ZIPs are in `out/make/zip/win32/x64/`; extract and run `FormEntryDesktop.exe` with all accompanying files. The packaged app does not require Node.js or npm.
+Packaged apps are in `out/`. Windows installers are in `out/make/nsis/`; run `FormEntryDesktop-Setup-<version>.exe` to install. The wizard shows an introduction, lets you choose the installation folder, and offers a launch checkbox when finished. Portable ZIPs are in `out/make/zip/win32/x64/`; extract and run `FormEntryDesktop.exe` with all accompanying files. The packaged app does not require Node.js or npm.
 
 If native dependency compilation fails on Windows, install Python 3 and Visual Studio Build Tools with **Desktop development with C++**.
 
@@ -54,10 +54,12 @@ The **Release Windows** workflow runs only for `v*` tags or manual dispatch. It 
 To prepare a release, bump `version` in `package.json` and `package-lock.json`, commit, then push a matching tag:
 
 ```sh
-git tag -a v0.3.0 -m "Release v0.3.0"
-git push origin v0.3.0
+git tag -a v0.4.0 -m "Release v0.4.0"
+git push origin v0.4.0
 ```
 
-Tag runs create a **draft GitHub Release**. Review its assets and publish it when ready. Keep `RELEASES`, `*-full.nupkg`, and the installer attached; the updater needs them. Updates use stable public Releases from the repository in `package.json` through `update.electronjs.org`.
+Tag runs create a **draft GitHub Release**. Review its assets and publish it when ready. Keep `latest.yml`, the installer, and its `.blockmap` attached; the NSIS updater needs them. Updates use stable public GitHub Releases from the repository in `package.json`.
+
+The old Squirrel release (`v0.3.0`) cannot update to this installer automatically. Uninstall it through Windows Settings, then install the new version. App data is retained; do not use **Xóa profile** during migration.
 
 Installed Windows apps check at startup and every ten minutes. **Settings → Kiểm tra cập nhật** checks manually. Updates download in the background; restart is offered only when no operation or schedule is active, and existing shutdown cleanup finishes before installation. Configuration, history, and Chrome sessions are retained. Portable builds, development runs, and smoke tests do not auto-update. Windows builds are currently unsigned.

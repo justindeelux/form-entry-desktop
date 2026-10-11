@@ -1,0 +1,25 @@
+appId: local.form-entry.desktop
+productName: Form Entry Desktop
+directories:
+  output: out/make/nsis
+  buildResources: assets
+win:
+  executableName: FormEntryDesktop
+  icon: assets/app-icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+  artifactName: FormEntryDesktop-Setup-${version}.exe
+  include: installer/wizard.nsh
+  installerLanguages: [en_US]
+publish:
+  provider: github
+  owner: justindeelux
+  repo: form-entry-desktop

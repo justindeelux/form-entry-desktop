@@ -1,7 +1,7 @@
 {
   "name": "form-entry-desktop",
   "productName": "Form Entry Desktop",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Minimal Google Sheets to Google Forms desktop tool",
   "private": true,
   "author": "Form Entry Desktop",
@@ -13,7 +13,7 @@
     "test": "vitest run",
     "start": "npm run build && electron-forge start",
     "package": "npm run build && electron-forge package",
-    "make": "npm run build && electron-forge make"
+    "make": "npm run build && node scripts/make.cjs"
   },
   "config": {
     "forge": "./forge.config.cjs"
@@ -23,7 +23,7 @@
     "@mantine/hooks": "9.7.1",
     "@xyflow/react": "12.12.0",
     "better-sqlite3": "13.0.3",
-    "electron-squirrel-startup": "1.0.1",
+    "electron-updater": "6.8.9",
     "playwright-core": "1.64.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -31,7 +31,6 @@
   },
   "devDependencies": {
     "@electron-forge/cli": "8.0.1",
-    "@electron-forge/maker-squirrel": "8.0.1",
     "@electron-forge/maker-zip": "8.0.1",
     "@electron-forge/plugin-auto-unpack-natives": "8.0.1",
     "@types/better-sqlite3": "9.6.0",
@@ -40,6 +39,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
     "electron": "44.7.0",
+    "electron-builder": "26.15.3",
     "lucide-react": "1.55.0",
     "typescript": "7.0.2",
     "vite": "8.3.4",
