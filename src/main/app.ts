@@ -72,7 +72,9 @@ else void app.whenReady().then(async () => {
     if (!state.active && !state.running && loaded && scheduledRaw) loaded = scheduledRaw;
     if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('schedule.changed', { ...state, data: loaded });
   });
-  const updater = createUpdater(() => busy || closing || scheduler.state().active || scheduler.state().running, smoke);
+  const updater = createUpdater(() => busy || closing || scheduler.state().active || scheduler.state().running, smoke, state => {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('update.changed', state);
+  });
   function trusted(event: IpcMainInvokeEvent) {
     return !window.isDestroyed() && event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame && event.senderFrame.url === rendererUrl;
   }
@@ -122,6 +124,11 @@ else void app.whenReady().then(async () => {
   });
   handle('settings.read', async () => database.preferences());
   handle('update.check', async input => { z.object({}).strict().parse(input); updater.check(true); });
+  ipcMain.handle('update.state', (event, input) => {
+    if (!trusted(event)) return { ok: false, error: 'IPC_DENIED' };
+    try { z.object({}).strict().parse(input); return { ok: true, value: updater.state() }; }
+    catch { return { ok: false, error: 'OPERATION_FAILED' }; }
+  });
   handle('settings.save', async input => database.savePreferences(preferencesSchema.parse(input)));
   handle('data.history', async input => {
     if (!loaded) throw new Error('DATA_NOT_LOADED');
