@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi, Progress, ScheduleState } from '../shared/contracts';
 
 const api: DesktopApi = {
+  checkForUpdates: () => ipcRenderer.invoke('update.check', {}),
   startSchedule: request => ipcRenderer.invoke('schedule.start', request),
   stopSchedule: () => ipcRenderer.invoke('schedule.stop', {}),
   scheduleState: () => ipcRenderer.invoke('schedule.state', {}),

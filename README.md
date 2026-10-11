@@ -43,8 +43,21 @@ For Windows x64, run on Windows:
 npm run make -- --platform=win32 --arch=x64
 ```
 
-Packaged apps are in `out/`; Windows ZIPs are in `out/make/zip/win32/x64/`. Extract the ZIP and run `Form Entry Desktop.exe` with all accompanying files. The packaged app does not require Node.js or npm. Current builds are portable ZIPs without an installer or updater.
+Packaged apps are in `out/`. Windows installers are in `out/make/squirrel.windows/x64/`; run `FormEntryDesktop-Setup.exe` to install. Portable ZIPs are in `out/make/zip/win32/x64/`; extract and run `FormEntryDesktop.exe` with all accompanying files. The packaged app does not require Node.js or npm.
 
 If native dependency compilation fails on Windows, install Python 3 and Visual Studio Build Tools with **Desktop development with C++**.
 
-The included **Build Windows** GitHub Actions workflow builds only Windows x64 on pushes to `main` or manual dispatch. It runs typecheck, unit tests, and a packaged smoke check with local fixtures, then uploads the **Form-Entry-Desktop-Windows-x64** artifact.
+## Releases and updates
+
+The **Release Windows** workflow runs only for `v*` tags or manual dispatch. It tests and builds Windows x64, checks the packaged and installed apps with local fixtures, and uploads the installer and portable ZIP. Manual runs create artifacts only.
+
+To prepare a release, bump `version` in `package.json` and `package-lock.json`, commit, then push a matching tag:
+
+```sh
+git tag -a v0.3.0 -m "Release v0.3.0"
+git push origin v0.3.0
+```
+
+Tag runs create a **draft GitHub Release**. Review its assets and publish it when ready. Keep `RELEASES`, `*-full.nupkg`, and the installer attached; the updater needs them. Updates use stable public Releases from the repository in `package.json` through `update.electronjs.org`.
+
+Installed Windows apps check at startup and every ten minutes. **Settings → Kiểm tra cập nhật** checks manually. Updates download in the background; restart is offered only when no operation or schedule is active, and existing shutdown cleanup finishes before installation. Configuration, history, and Chrome sessions are retained. Portable builds, development runs, and smoke tests do not auto-update. Windows builds are currently unsigned.

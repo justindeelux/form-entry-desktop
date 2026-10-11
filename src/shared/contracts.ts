@@ -90,6 +90,7 @@ export const scheduleStartSchema = z.object({ source: loadSchema, send: sendSche
 export type ScheduleRequest = z.infer<typeof scheduleStartSchema>;
 export type ScheduleState = { active: boolean; running: boolean; startedAt?: number; nextRunAt?: number; error?: string; details?: ValidationDetails; data?: LoadedData };
 export interface DesktopApi {
+  checkForUpdates(): Promise<Result<void>>;
   startSchedule(request: ScheduleRequest): Promise<Result<ScheduleState>>;
   stopSchedule(): Promise<Result<ScheduleState>>;
   scheduleState(): Promise<Result<ScheduleState>>;

@@ -1,0 +1,84 @@
+name: Release Windows
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Validate release version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw "Tag must match package.json version: v$version" }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Build Windows installer and portable ZIP
+        run: npm run make -- --platform=win32 --arch=x64
+      - name: Check packaged app with local fixtures
+        run: node tests/packaged-smoke.cjs "out/Form Entry Desktop-win32-x64/FormEntryDesktop.exe"
+      - name: Check shutdown safety
+        run: node tests/packaged-close.cjs "out/Form Entry Desktop-win32-x64/FormEntryDesktop.exe"
+      - name: Install and check Windows app
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path 'out/make/squirrel.windows/x64/FormEntryDesktop-Setup.exe').Path
+          $install = Start-Process -FilePath $setup -ArgumentList '--silent' -PassThru
+          if (-not $install.WaitForExit(120000)) { throw 'Installer timed out' }
+          if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
+          Get-Process FormEntryDesktop -ErrorAction SilentlyContinue | ForEach-Object {
+            $_.CloseMainWindow() | Out-Null
+            if (-not $_.WaitForExit(30000)) { throw 'First launch did not close' }
+          }
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $root = Join-Path $env:LOCALAPPDATA 'FormEntryDesktop'
+          if (-not (Test-Path (Join-Path $root 'Update.exe'))) { throw 'Missing Squirrel updater' }
+          $exe = Join-Path $root "app-$version/FormEntryDesktop.exe"
+          if (-not (Test-Path $exe)) { throw 'Missing installed executable' }
+          node tests/packaged-smoke.cjs $exe
+          if ($LASTEXITCODE -ne 0) { throw 'Installed app smoke check failed' }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Form-Entry-Desktop-Windows-x64
+          path: |
+            out/make/squirrel.windows/x64/*
+            out/make/zip/win32/x64/*.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: Form-Entry-Desktop-Windows-x64
+          path: release
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: pwsh
+        run: |
+          $assets = @(Get-ChildItem release -Recurse -File | ForEach-Object { $_.FullName })
+          foreach ($pattern in @('RELEASES', '*-full.nupkg', '*Setup.exe', '*.zip')) {
+            if (-not (Get-ChildItem release -Recurse -File -Filter $pattern)) { throw "Missing release asset: $pattern" }
+          }
+          gh release create $env:GITHUB_REF_NAME @assets --verify-tag --draft --title "Form Entry Desktop $env:GITHUB_REF_NAME" --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed' }

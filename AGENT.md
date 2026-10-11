@@ -14,7 +14,7 @@ Form Entry Desktop is a local Electron app that reads a selected Google Sheets t
 - `src/shared/`: Zod contracts, mapping, option matching, date parsing, row filtering, and scheduling rules.
 - `tests/`: Vitest unit tests and local fixture checks for packaged Electron apps.
 - `assets/`: application icons.
-- `.github/workflows/windows.yml`: Windows x64 build, tests, packaged smoke check, and ZIP artifact upload.
+- `.github/workflows/release.yml`: Windows x64 installer/ZIP, fixture checks, and draft Releases for version tags; manual runs create artifacts only.
 
 ## Data and behavior
 
@@ -34,6 +34,7 @@ Form Entry Desktop is a local Electron app that reads a selected Google Sheets t
 - Schedules run only while the app is open and never resume automatically after restart. Pin their configuration, serialize operations, and preserve validation/checkpoint protections.
 - On stop or close, cancel waiting and preparation before the next submission, finish recording any Submit already started, and close only browser processes owned by the app. Check window lifetime before accessing webContents.
 - UI text is not selectable outside editable controls. Preserve keyboard navigation, labels, focus handling, and editing/copy/paste inside inputs.
+- Handle Squirrel install/update/uninstall events before starting the app. Auto-updates are limited to installed Windows production builds and the public repository in package.json. Preserve app identity and userData across versions. Never install an update during an active operation/schedule; use existing shutdown cleanup before quitAndInstall. Keep GitHub tokens in CI, never in the app.
 
 ## Verification
 

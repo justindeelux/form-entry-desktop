@@ -16,11 +16,13 @@ import { historyScope, uniqueSheetRows } from './row-history';
 import { createScheduler } from './scheduler';
 import { completeScheduledRows } from '../shared/schedule';
 import { mapRow } from '../shared/mapping';
+import { createUpdater } from './updater';
 
 const smoke = process.argv.includes('--smoke-test');
 if (smoke) app.setPath('userData', process.env.FORM_ENTRY_SMOKE_DATA ?? mkdtempSync(join(tmpdir(), 'form-entry-smoke-')));
-if (!app.requestSingleInstanceLock()) app.quit();
+if (require('electron-squirrel-startup') || !app.requestSingleInstanceLock()) app.quit();
 else void app.whenReady().then(async () => {
+  if (process.platform === 'win32') app.setAppUserModelId('com.squirrel.FormEntryDesktop.FormEntryDesktop');
   const dataPath = app.getPath('userData');
   mkdirSync(dataPath, { recursive: true, mode: 0o700 });
   chmodSync(dataPath, 0o700);
@@ -70,6 +72,7 @@ else void app.whenReady().then(async () => {
     if (!state.active && !state.running && loaded && scheduledRaw) loaded = scheduledRaw;
     if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('schedule.changed', { ...state, data: loaded });
   });
+  const updater = createUpdater(() => busy || closing || scheduler.state().active || scheduler.state().running, smoke);
   function trusted(event: IpcMainInvokeEvent) {
     return !window.isDestroyed() && event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame && event.senderFrame.url === rendererUrl;
   }
@@ -118,6 +121,7 @@ else void app.whenReady().then(async () => {
     scheduleRequest = undefined; scheduledRaw = undefined; scheduledColumns = '';
   });
   handle('settings.read', async () => database.preferences());
+  handle('update.check', async input => { z.object({}).strict().parse(input); updater.check(true); });
   handle('settings.save', async input => database.savePreferences(preferencesSchema.parse(input)));
   handle('data.history', async input => {
     if (!loaded) throw new Error('DATA_NOT_LOADED');
@@ -243,15 +247,15 @@ else void app.whenReady().then(async () => {
     if (mayQuit) return;
     event.preventDefault();
     if (closing) return;
-    closing = true; closingSignal.abort(); scheduler.stop();
+    closing = true; closingSignal.abort(); scheduler.stop(); updater.stop();
     void (async () => {
       try { await active; } catch { /* The IPC handler reports the error. */ }
       try { await automation.request('close'); } catch { /* Browser may already be closed. */ }
-      automation.stop(); mayQuit = true; app.quit();
+      automation.stop(); mayQuit = true; updater.finishQuit();
     })();
   });
   app.on('will-quit', () => { clearInterval(historyCleanup); database.close(); });
-  try { await window.loadFile(rendererFile); }
+  try { await window.loadFile(rendererFile); if (!closing) updater.start(); }
   catch (error) { if (!closing && !window.isDestroyed()) throw error; }
 }).catch(() => { console.error('APP_START_FAILED'); app.exit(1); });
 app.on('window-all-closed', () => app.quit());

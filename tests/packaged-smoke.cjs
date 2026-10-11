@@ -13,6 +13,7 @@ const { tmpdir } = require('node:os');
     const page = await application.firstWindow();
     await page.getByRole('button', { name: 'Tải dữ liệu', exact: true }).waitFor();
     assert.equal(await page.evaluate(() => typeof window.require), 'undefined');
+    assert.equal((await page.evaluate(() => window.desktop.checkForUpdates())).error, 'UPDATE_UNAVAILABLE');
     const windowHeight = await application.evaluate(({ BrowserWindow, screen }) => {
       const window = BrowserWindow.getAllWindows()[0];
       return { actual: window.getSize()[1], expected: Math.min(910, screen.getDisplayMatching(window.getBounds()).workAreaSize.height) };
@@ -320,7 +321,7 @@ const { tmpdir } = require('node:os');
     assert.equal(await reopened.locator('.react-flow__edge').count(), 0);
     await reopened.getByRole('heading', { name: 'Sheets → Google Form', exact: true }).scrollIntoViewIfNeeded();
     await reopened.screenshot({ path: '.local-checks/profile-reset.png', fullPage: true });
-    console.log('PACKAGED_UI_PASSED', JSON.stringify({ ...checks, mouseMapping: true, keyboardMapping: true, immediateSave: true, restoredMapping: true, survivesRestart: true, compactCards: true, defaults: true, columnTitles: true, distinctLineColors: true, windowHeight: 910, resetMapping: true, resetUrls: true, typedDefaults: true, currentDate: true, sourceCardCollapsed: true, validationFieldDetails: true, datetimeToDate: true, fixtureOnly: true, optionMatching: true, confirmedAliasPersistence: true, explicitReconciliation: true, mappingResetInHeader: true, profileReset: true, profileReload: true, icons: true }));
+    console.log('PACKAGED_UI_PASSED', JSON.stringify({ ...checks, mouseMapping: true, keyboardMapping: true, immediateSave: true, restoredMapping: true, survivesRestart: true, compactCards: true, defaults: true, columnTitles: true, distinctLineColors: true, windowHeight: windowHeight.actual, resetMapping: true, resetUrls: true, typedDefaults: true, currentDate: true, sourceCardCollapsed: true, validationFieldDetails: true, datetimeToDate: true, fixtureOnly: true, optionMatching: true, confirmedAliasPersistence: true, explicitReconciliation: true, mappingResetInHeader: true, profileReset: true, profileReload: true, icons: true }));
   } catch (error) {
     await mkdir('.local-checks', { recursive: true });
     const shot = await application.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].capturePage()).toPNG().toString('base64'));
