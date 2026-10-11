@@ -49,9 +49,19 @@ jobs:
           node tests/packaged-smoke.cjs $exe
           if ($LASTEXITCODE -ne 0) { throw 'Installed app smoke check failed' }
           ./tests/installer-wizard.ps1 -Setup $setup -InstallDir $root -Update
+          Get-Process FormEntryDesktop -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Output "Closing installed app before uninstall: $($_.Path)"
+            $_.CloseMainWindow() | Out-Null
+            if (-not $_.WaitForExit(30000)) { throw 'Updated app did not close' }
+          }
+          Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' |
+            Where-Object { $_.DisplayName -like 'Form Entry Desktop*' } |
+            Select-Object DisplayName, UninstallString | Format-List
           $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @('/S', "_?=$root") -PassThru
           if (-not $uninstall.WaitForExit(120000)) { throw 'Uninstaller timed out' }
           if ($uninstall.ExitCode -ne 0) { throw "Uninstall failed: $($uninstall.ExitCode)" }
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Test-Path $exe) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
           if (Test-Path $exe) { throw 'Uninstall did not remove the installed app' }
       - uses: actions/upload-artifact@v7
         with:
