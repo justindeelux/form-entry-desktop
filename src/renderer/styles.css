@@ -1,0 +1,12 @@
+body { background: #f5f6f8; user-select: none; }
+input, textarea, [contenteditable="true"] { user-select: text; }
+.mapping-scroll { max-height: 490px; overflow: auto; border: 1px solid #dfe3e8; border-radius: 8px; background: white; }
+.mapping-card { overflow: visible; width: 385px; height: 38px; min-height: 38px; }
+.mapping-card .react-flow__handle { width: 14px; height: 14px; background: #228be6; border: 2px solid white; }
+.mapping-scroll .react-flow__edge-path { stroke-width: 2; }
+.mapping-scroll .react-flow__edge.selected .react-flow__edge-path { stroke-width: 3; }
+.mapping-label { display: block; width: 100%; padding: 0; border: 0; background: none; text-align: left; font: inherit; font-size: 14px; font-weight: 400; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+.mapping-label:focus-visible { outline: 2px solid #228be6; outline-offset: 2px; }
+
+.mapping-titles { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: 385px 138px 385px; width: 950px; padding: 10px 0 10px 12px; background: white; border-bottom: 1px solid #dfe3e8; }
+.mapping-titles > :last-child { grid-column: 3; }
