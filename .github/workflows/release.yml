@@ -37,6 +37,8 @@ jobs:
         shell: pwsh
         run: |
           $setup = (Get-ChildItem 'out/make/nsis/*Setup-*.exe').FullName
+          if (-not (Test-Path 'out/make/nsis/latest.yml')) { throw 'Missing public update metadata' }
+          if (-not (Test-Path "$setup.blockmap")) { throw 'Missing installer blockmap' }
           $root = Join-Path $env:RUNNER_TEMP 'Custom Install\FormEntryDesktop'
           ./tests/installer-wizard.ps1 -Setup $setup -InstallDir $root
           $exe = Join-Path $root 'FormEntryDesktop.exe'
