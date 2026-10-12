@@ -1,12 +1,13 @@
 import { Settings as SettingsIcon, RefreshCw, CalendarClock, Square, Trash2, RotateCcw, ChevronDown, ChevronUp, Download, Send, Save, Check, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Alert, Button, Card, Checkbox, Collapse, Container, Image, Loader, Modal, NumberInput, Group, Progress as ProgressBar, SegmentedControl, Select, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Button, Card, Checkbox, Collapse, Container, Image, Modal, NumberInput, Group, Progress as ProgressBar, SegmentedControl, Select, Stack, Text, TextInput, Title } from '@mantine/core';
 import appIcon from '../../assets/app-icon.png';
 import { version } from '../../package.json';
 import { scheduleRuleSchema, type ScheduleState } from '../shared/contracts';
 import type { DesktopApi, LoadedData, Progress, PendingSubmission, ValidationDetails, UpdateState } from '../shared/contracts';
 import { SheetDataTable } from './SheetDataTable';
 import { MappingEditor } from './MappingEditor';
+import { UpdateModal } from './UpdateModal';
 import { mappingBinding, readSettings, restoreAliases, restoreFormatting, restoreDefaults, restoreMapping, saveSettings, type Settings } from './settings';
 
 declare global { interface Window { desktop: DesktopApi } }
@@ -44,7 +45,7 @@ const errors: Record<string, string> = {
 };
 export function App() {
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle' });
-  const [updateRequested, setUpdateRequested] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(false);
   const [initial] = useState(() => readSettings(localStorage));
   const [settings, setSettings] = useState(initial.settings);
   const { sheetsUrl, formUrl, requireLogin, startRow, mapping, defaults, aliases, formatting } = settings;
@@ -79,8 +80,9 @@ export function App() {
   const locked = !!busy || schedule.active || schedule.running || scheduleBusy || update.status === 'installing';
   useEffect(() => {
     let received = false, disposed = false;
-    const unsubscribe = window.desktop.onUpdate(state => { received = true; setUpdate(state); });
-    void window.desktop.updateState().then(result => { if (!disposed && !received && result.ok) setUpdate(result.value); }).catch(() => {});
+    function receive(state: UpdateState) { setUpdate(state); if (state.status === 'available') setUpdateOpen(true); }
+    const unsubscribe = window.desktop.onUpdate(state => { received = true; receive(state); });
+    void window.desktop.updateState().then(result => { if (!disposed && !received && result.ok) receive(result.value); }).catch(() => {});
     return () => { disposed = true; unsubscribe(); };
   }, []);
   function updateSchedule(state: ScheduleState) {
@@ -204,21 +206,9 @@ export function App() {
   });
   const remaining = Math.max(0, Math.ceil(((schedule.nextRunAt ?? clock) - clock) / 1000));
   const countdown = `${Math.floor(remaining / 3600)}:${String(Math.floor(remaining / 60) % 60).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`;
-  const updateMessages = {
-    idle: '', unsupported: 'Cập nhật tự động chỉ dùng được với bản Windows đã cài.',
-    checking: 'Đang kiểm tra cập nhật…', downloading: `Đang tải phiên bản ${update.version ?? 'mới'}: ${Math.floor(update.percent ?? 0)}%`,
-    downloaded: `Phiên bản ${update.version ?? 'mới'} đã tải xong. Khởi động lại khi bạn sẵn sàng.`,
-    'not-available': 'Bạn đang dùng phiên bản mới nhất.', error: 'Không hoàn tất được cập nhật. Kiểm tra kết nối rồi thử lại.',
-    installing: 'Đang đóng app an toàn để cập nhật. Cửa sổ cài đặt sẽ hiển thị tiến độ; hoàn tất để mở lại app.',
-  };
-  const updateNotice = update.status !== 'idle' && <Alert color={update.status === 'error' ? 'red' : 'blue'}>
-    <Text size="sm" role="status" aria-live="polite">{updateMessages[update.status]}</Text>
-    {update.status === 'downloading' && <ProgressBar mt="xs" value={update.percent ?? 0} aria-label="Tiến độ tải cập nhật" />}
-    {['checking', 'installing'].includes(update.status) && <Loader mt="xs" size="sm" aria-label={updateMessages[update.status]} />}
-  </Alert>;
   return <Container fluid py="lg" style={{ minHeight: '100vh' }}><Stack gap="md">
-    <Group justify="space-between"><Group gap="sm" wrap="nowrap"><Image src={appIcon} w={48} h={48} alt="" aria-hidden="true" draggable={false} /><Stack gap={0}><Title order={1} size="h2">Sheets → Google Form</Title><Text size="xs" c="dimmed">Phiên bản {version}</Text></Stack></Group><Button leftSection={<SettingsIcon size={16} aria-hidden="true" />} color="red" variant="filled" disabled={locked} onClick={() => setPreferencesOpen(true)}>Cài đặt</Button></Group>
-    {!preferencesOpen && ['checking', 'downloading', 'downloaded', 'installing'].includes(update.status) && updateNotice}
+    <Group justify="space-between"><Group gap="sm" wrap="nowrap"><Image src={appIcon} w={48} h={48} alt="" aria-hidden="true" draggable={false} /><Stack gap={0}><Title order={1} size="h2">Sheets → Google Form</Title><Text size="xs" c="dimmed">Phiên bản {version}</Text></Stack></Group><Group gap="sm"><Button leftSection={<Download size={16} aria-hidden="true" />} variant="light" onClick={() => setUpdateOpen(true)}>Cập nhật</Button><Button leftSection={<SettingsIcon size={16} aria-hidden="true" />} color="red" variant="filled" disabled={locked} onClick={() => setPreferencesOpen(true)}>Cài đặt</Button></Group></Group>
+    <UpdateModal opened={updateOpen} onClose={() => setUpdateOpen(false)} state={update} locked={locked} />
     <Modal opened={scheduleOpen} onClose={() => { if (!scheduleBusy) setScheduleOpen(false); }} title="Đặt lịch gửi">
       <Stack gap="sm">
         {error && <Alert color="red" role="alert">{error}</Alert>}
@@ -241,13 +231,6 @@ export function App() {
       <Checkbox label="Thu gọn Chrome xuống taskbar / Dock" checked={minimizeChrome} onChange={event => setMinimizeChrome(event.currentTarget.checked)} disabled={preferencesBusy} />
       <Text size="xs" c="dimmed">Cửa sổ đăng nhập Google luôn hiển thị.</Text>
       <Button leftSection={<Save size={16} aria-hidden="true" />} onClick={savePreferences} loading={preferencesBusy}>Lưu cài đặt</Button>
-      <Button leftSection={<Download size={16} aria-hidden="true" />} variant="light" loading={updateRequested || update.status === 'checking'} disabled={locked || preferencesBusy || update.status === 'downloading'} onClick={async () => {
-        setUpdateRequested(true);
-        try { const result = await window.desktop.checkForUpdates(); if (!result.ok) { setPreferencesOpen(false); showError(result.error); } }
-        catch { setPreferencesOpen(false); setError('Không kiểm tra được cập nhật.'); }
-        finally { setUpdateRequested(false); }
-      }}>{update.status === 'checking' ? 'Đang kiểm tra…' : update.status === 'downloading' ? 'Đang tải cập nhật…' : update.status === 'downloaded' ? 'Khởi động lại để cập nhật' : 'Kiểm tra cập nhật'}</Button>
-      {updateNotice}
       <Button leftSection={<Trash2 size={16} aria-hidden="true" />} color="red" variant="light" disabled={locked || preferencesBusy} onClick={() => { setPreferencesOpen(false); setResetTarget('profile'); }}>Xóa profile</Button></Stack>
     </Modal>
     <Modal opened={!!resetTarget} onClose={() => { if (!locked) setResetTarget(undefined); }} title={resetTarget === 'profile' ? 'Xác nhận xóa profile' : resetTarget === 'url' ? 'Xác nhận Reset URL' : 'Xác nhận Reset mapping'} closeOnClickOutside={!locked} closeOnEscape={!locked} withCloseButton={!locked}>

@@ -89,9 +89,10 @@ export type ScheduleRule = z.infer<typeof scheduleRuleSchema>;
 export const scheduleStartSchema = z.object({ source: loadSchema, send: sendSchema, rule: scheduleRuleSchema }).strict();
 export type ScheduleRequest = z.infer<typeof scheduleStartSchema>;
 export type ScheduleState = { active: boolean; running: boolean; startedAt?: number; nextRunAt?: number; error?: string; details?: ValidationDetails; data?: LoadedData };
-export type UpdateState = { status: 'unsupported' | 'idle' | 'checking' | 'downloading' | 'downloaded' | 'not-available' | 'error' | 'installing'; version?: string; percent?: number };
+export type UpdateState = { status: 'unsupported' | 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error' | 'installing'; version?: string; percent?: number; releaseNotes?: string };
 export interface DesktopApi {
   checkForUpdates(): Promise<Result<void>>;
+  installUpdate(): Promise<Result<void>>;
   updateState(): Promise<Result<UpdateState>>;
   onUpdate(callback: (state: UpdateState) => void): () => void;
   startSchedule(request: ScheduleRequest): Promise<Result<ScheduleState>>;
