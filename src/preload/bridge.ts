@@ -3,6 +3,7 @@ import type { DesktopApi, Progress, ScheduleState, UpdateState } from '../shared
 
 const api: DesktopApi = {
   checkForUpdates: () => ipcRenderer.invoke('update.check', {}),
+  installUpdate: () => ipcRenderer.invoke('update.install', {}),
   updateState: () => ipcRenderer.invoke('update.state', {}),
   onUpdate(callback) {
     const listener = (_event: Electron.IpcRendererEvent, state: UpdateState) => callback(state);

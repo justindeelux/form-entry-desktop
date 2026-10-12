@@ -123,12 +123,19 @@ else void app.whenReady().then(async () => {
     scheduleRequest = undefined; scheduledRaw = undefined; scheduledColumns = '';
   });
   handle('settings.read', async () => database.preferences());
-  handle('update.check', async input => { z.object({}).strict().parse(input); updater.check(true); });
-  ipcMain.handle('update.state', (event, input) => {
-    if (!trusted(event)) return { ok: false, error: 'IPC_DENIED' };
-    try { z.object({}).strict().parse(input); return { ok: true, value: updater.state() }; }
-    catch { return { ok: false, error: 'OPERATION_FAILED' }; }
-  });
+  for (const channel of ['update.check', 'update.install', 'update.state']) {
+    ipcMain.handle(channel, (event, input) => {
+      if (!trusted(event)) return { ok: false, error: 'IPC_DENIED' };
+      if (closing) return { ok: false, error: 'APP_CLOSING' };
+      try {
+        z.object({}).strict().parse(input);
+        const value = channel === 'update.state' ? updater.state() : channel === 'update.check' ? updater.check() : updater.apply();
+        return { ok: true, value };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'OPERATION_FAILED' };
+      }
+    });
+  }
   handle('settings.save', async input => database.savePreferences(preferencesSchema.parse(input)));
   handle('data.history', async input => {
     if (!loaded) throw new Error('DATA_NOT_LOADED');
