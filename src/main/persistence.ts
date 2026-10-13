@@ -1,4 +1,4 @@
-import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
@@ -27,7 +27,7 @@ export function openState(path: string, legacyPath?: string) {
     }
   };
   // Old SQLite files are read only for migration; new records live in Sheets.
-  const legacy = legacyPath && existsSync(legacyPath) ? new DatabaseSync(legacyPath, { readOnly: true }) : undefined;
+  let legacy = legacyPath && existsSync(legacyPath) ? new DatabaseSync(legacyPath, { readOnly: true }) : undefined;
   const legacyTable = (name: string) => !!legacy?.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
   if (!existsSync(path) && legacyTable('preferences')) {
     const row = legacy!.prepare('SELECT * FROM preferences WHERE id=1').get();
@@ -57,7 +57,11 @@ export function openState(path: string, legacyPath?: string) {
   return {
     preferences: () => state.preferences,
     savePreferences(value: Preferences) { state.preferences = preferencesSchema.parse(value); save(); return state.preferences; },
-    resetPreferences() { state.preferences = preferencesSchema.parse({}); save(); },
+    resetAll() {
+      legacy?.close(); legacy = undefined;
+      state.preferences = preferencesSchema.parse({}); state.pending = []; state.migrated = [];
+      for (const file of [path, `${path}.tmp`, ...(legacyPath ? [legacyPath, `${legacyPath}-wal`, `${legacyPath}-shm`, `${legacyPath}-journal`] : [])]) rmSync(file, { force: true });
+    },
     uncertain: () => state.pending.length > 0 || legacyPending().length > 0,
     begin(checkpoint: Checkpoint) {
       if (state.pending.length || legacyPending().length) throw new Error('SUBMISSION_UNKNOWN_REVIEW');

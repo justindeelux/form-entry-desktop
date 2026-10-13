@@ -98,6 +98,10 @@ export function createGoogleAuth(config: GoogleConfig | undefined, path: string,
       return file;
     } finally { clearTimeout(timer); cancel = undefined; server.closeAllConnections(); server.close(); }
   }
+  function clearLocal() {
+    cancel?.(); access = undefined;
+    rmSync(path, { force: true }); rmSync(`${path}.tmp`, { force: true });
+  }
   async function disconnect() {
     const token = stored();
     if (token) {
@@ -106,7 +110,7 @@ export function createGoogleAuth(config: GoogleConfig | undefined, path: string,
       catch { throw new Error('GOOGLE_CONNECTION_FAILED'); }
       if (!response.ok && response.status !== 400) throw new Error('GOOGLE_CONNECTION_FAILED');
     }
-    rmSync(path, { force: true }); access = undefined;
+    clearLocal();
   }
-  return { status, connect, disconnect, accessToken, invalidate: () => { access = undefined; }, cancel: () => cancel?.() };
+  return { status, connect, disconnect, clearLocal, accessToken, invalidate: () => { access = undefined; }, cancel: () => cancel?.() };
 }

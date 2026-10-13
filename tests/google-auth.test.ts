@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -39,6 +39,17 @@ describe('desktop Google OAuth', () => {
     expect(await restarted.accessToken()).toBe('access-fixture');
     expect((fake.request.mock.calls[1][1]!.body as URLSearchParams).get('grant_type')).toBe('refresh_token');
     await restarted.disconnect(); expect(existsSync(fake.path)).toBe(false);
+  });
+  it('clears both stored and cached credentials locally even if no revocation request can run', async () => {
+    const fake = setup(async () => {});
+    writeFileSync(fake.path, fake.deps.encrypt(JSON.stringify({ clientId: config.client_id, refreshToken: 'refresh-fixture' })));
+    writeFileSync(`${fake.path}.tmp`, 'unfinished token file');
+    expect(await fake.auth.accessToken()).toBe('access-fixture');
+    fake.auth.clearLocal();
+    expect(fake.auth.status().connected).toBe(false);
+    expect(existsSync(fake.path)).toBe(false); expect(existsSync(`${fake.path}.tmp`)).toBe(false);
+    await expect(fake.auth.accessToken()).rejects.toThrow('GOOGLE_CONNECT_REQUIRED');
+    expect(fake.request).toHaveBeenCalledTimes(1);
   });
   it('cancels without saving credentials or exchanging a code', async () => {
     const fake = setup(async () => { fake.auth.cancel(); });

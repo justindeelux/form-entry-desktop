@@ -40,6 +40,7 @@ else void app.whenReady().then(async () => {
     encrypt: value => safeStorage.encryptString(value), decrypt: value => safeStorage.decryptString(value),
   });
   const sheetsApi = createSheetsApi(google);
+  let smokeGoogleConnected = true;
   const rendererFile = join(__dirname, '../renderer/index.html');
   const rendererUrl = pathToFileURL(rendererFile).href;
   const icon = join(app.getAppPath(), 'assets/app-icon.png');
@@ -101,10 +102,10 @@ else void app.whenReady().then(async () => {
       } finally { busy = false; active = undefined; }
     });
   }
-  handle('google.state', async input => { z.object({}).strict().parse(input); if (googleConfigError) throw new Error('GOOGLE_CONFIG_INVALID'); return smoke ? { configured: true, connected: true } : google.status(); });
+  handle('google.state', async input => { z.object({}).strict().parse(input); if (googleConfigError) throw new Error('GOOGLE_CONFIG_INVALID'); return smoke ? { configured: true, connected: smokeGoogleConnected } : google.status(); });
   handle('google.connect', async input => {
     z.object({}).strict().parse(input);
-    if (smoke) return { connection: { configured: true, connected: true }, url: 'https://docs.google.com/spreadsheets/d/local-fixture/edit?gid=0', tabs: [{ id: 0, title: 'Trang tính1' }] };
+    if (smoke) { smokeGoogleConnected = true; return { connection: { configured: true, connected: true }, url: 'https://docs.google.com/spreadsheets/d/local-fixture/edit?gid=0', tabs: [{ id: 0, title: 'Trang tính1' }] }; }
     if (googleConfigError) throw new Error('GOOGLE_CONFIG_INVALID');
     const file = await google.connect(), tabs = await sheetsApi.tabs(file);
     if (!tabs.length) throw new Error('SHEETS_EMPTY');
@@ -180,7 +181,10 @@ else void app.whenReady().then(async () => {
     catch (error) { if (error instanceof Error && error.message === 'PROFILE_IN_USE') throw error; throw new Error('PROFILE_DELETE_FAILED'); }
     await window.webContents.session.clearStorageData();
     await window.webContents.session.clearCache();
-    store.resetPreferences();
+    try { await google.disconnect(); } catch { /* Reset still removes local tokens when revocation or decryption fails. */ }
+    google.clearLocal();
+    store.resetAll();
+    smokeGoogleConnected = false;
     automation.stop(); loaded = undefined; sourceUrl = ''; formUrl = '';
     scheduleRequest = undefined; sourceRequest = undefined; scheduledColumns = '';
   });

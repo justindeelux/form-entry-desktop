@@ -18,7 +18,7 @@ Before broad distribution, move out of Testing and complete the Google requireme
 
 Google Form submission remains browser automation. The OAuth connection authorizes Sheets access; it does not sign the tool's separate Chrome profile into a Form that requires login. Keep **Yêu cầu đăng nhập Google** enabled for such Forms.
 
-After reconnecting, a pending confirmed Form submission can still be completed with **Cập nhật Sheets**, without submitting again. Keep the original file, tab, row position and mapped control columns for recovery. Use one app instance per Sheets tab: checking a row and writing it are separate requests, not a compare-and-swap transaction.
+Reconnecting preserves pending confirmed Form submissions, but **Xóa profile** discards all local state and credentials, including those recovery records. It does not delete Sheets or Form responses on Google. Without resetting the profile, a pending confirmed Form submission can still be completed with **Cập nhật Sheets**, without submitting again. Keep the original file, tab, row position and mapped control columns for recovery. Use one app instance per Sheets tab: checking a row and writing it are separate requests, not a compare-and-swap transaction.
 
 Sources:
 

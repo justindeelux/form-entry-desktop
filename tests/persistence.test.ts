@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -25,12 +25,25 @@ describe('local configuration and crash recovery only', () => {
     store.close(); store = openState(path);
     expect(store.pending()[0].state).toBe('submitted');
     expect(() => store.confirmNotSent(checkpoint.batch, checkpoint.row)).toThrow('REVIEW_STATE_CHANGED');
-    store.resetPreferences();
-    expect(store.uncertain()).toBe(true);
     store.clear(checkpoint.batch, checkpoint.row);
     expect(openState(path).uncertain()).toBe(false);
     expect(JSON.parse(readFileSync(path, 'utf8')).pending).toEqual([]);
     if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+  it('resets preferences, pending records and legacy history without restoring them after restart', () => {
+    const { path, legacy } = paths(), db = new DatabaseSync(legacy);
+    db.exec("CREATE TABLE spike_attempts(id INTEGER PRIMARY KEY,state TEXT); INSERT INTO spike_attempts VALUES(7,'submit_intent')"); db.close();
+    writeFileSync(path, JSON.stringify({ preferences: { sendDelaySeconds: 5, fieldDelayMs: 100, minimizeChrome: true }, pending: [checkpoint], migrated: ['old'] }));
+    writeFileSync(`${path}.tmp`, 'old temporary state');
+    const store = openState(path, legacy);
+    expect(store.pending()).toHaveLength(2);
+    store.resetAll();
+    expect(store.pending()).toEqual([]); expect(store.uncertain()).toBe(false);
+    expect(store.preferences()).toEqual({ sendDelaySeconds: 0, fieldDelayMs: 0, minimizeChrome: false });
+    for (const file of [path, `${path}.tmp`, legacy]) expect(existsSync(file)).toBe(false);
+    store.close();
+    const restarted = openState(path, legacy);
+    expect(restarted.pending()).toEqual([]); expect(restarted.legacyHistory('scope')).toEqual([]); restarted.close();
   });
   it('can release an uncertain submission only after explicit review, and refuses corrupt state', () => {
     const { path } = paths(); const store = openState(path);

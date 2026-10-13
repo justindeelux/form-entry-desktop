@@ -276,6 +276,7 @@ const { tmpdir } = require('node:os');
     await reopened.getByRole('button', { name: 'Xóa profile', exact: true }).click();
     await reopened.getByRole('button', { name: 'Xác nhận xóa profile', exact: true }).click();
     await reopened.getByRole('dialog', { name: 'Xác nhận xóa profile', exact: true }).waitFor({ state: 'hidden' });
+    await reopened.getByRole('button', { name: 'Kết nối Google', exact: true }).waitFor();
     assert.equal(await reopened.getByLabel('URL Google Sheets').inputValue(), '');
     assert.equal(await reopened.evaluate(() => localStorage.length), 0);
     assert.deepEqual((await reopened.evaluate(() => window.desktop.preferences())).value, { sendDelaySeconds: 0, fieldDelayMs: 0, minimizeChrome: false });

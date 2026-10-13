@@ -128,6 +128,18 @@ const { join, resolve } = require('node:path');
     const second = await page.evaluate(({ config, cursor }) => window.desktop.history({ ...config, status: 'unsent', cursor }), { config, cursor: first.value.nextCursor });
     assert.equal(second.value.rows.length, 5); assert.equal(second.value.nextCursor, undefined);
     const { existsSync } = require('node:fs'); assert.equal(existsSync(join(profile, 'phase0.sqlite')), false);
-    console.log('SHEETS_STORAGE_PASSED', JSON.stringify({ explicitMapping: true, sheetHistory: true, writeFailureRecovery: true, restart: true, manualDoesNotRepeat: true, scheduledRepeatLimit: true, blankControlsSkipped: true, invalidControlsStop: true, paging: true, noSqlWrites: true }));
+    // Reset deliberately discards a confirmed pending send and even unreadable local OAuth files.
+    await application.evaluate(() => { globalThis.failNextWrite = true; });
+    assert.equal((await send()).error, 'SHEETS_WRITE_FAILED');
+    assert.equal((await page.evaluate(() => window.desktop.pendingSubmissions())).value.length, 1);
+    await writeFile(join(profile, 'google-token.enc'), 'unreadable-token-fixture');
+    await writeFile(join(profile, 'google-token.enc.tmp'), 'unfinished-token-fixture');
+    assert.equal((await page.evaluate(() => window.desktop.deleteProfile())).ok, true);
+    assert.deepEqual((await page.evaluate(() => window.desktop.pendingSubmissions())).value, []);
+    for (const file of ['state.json', 'state.json.tmp', 'google-token.enc', 'google-token.enc.tmp', 'chrome-profile']) assert.equal(existsSync(join(profile, file)), false);
+    assert.equal((await page.evaluate(() => window.desktop.googleState())).value.connected, false);
+    await application.close(); await open();
+    assert.deepEqual((await page.evaluate(() => window.desktop.pendingSubmissions())).value, []);
+    console.log('SHEETS_STORAGE_PASSED' , JSON.stringify({ explicitMapping: true, sheetHistory: true, writeFailureRecovery: true, restart: true, manualDoesNotRepeat: true, scheduledRepeatLimit: true, blankControlsSkipped: true, invalidControlsStop: true, paging: true, noSqlWrites: true }));
   } finally { if (application) await application.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
