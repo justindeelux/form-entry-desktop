@@ -1,6 +1,6 @@
 import { FieldValidationError, type Aliases, type FormField } from './contracts';
 
-const basic = (value: string) => value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase('vi');
+const basic = (value: string) => value.normalize('NFKC').trim().replace(/\s+/gu, ' ').replace(/\( /g, '(').replace(/ \)/g, ')').toLocaleLowerCase('vi');
 const loose = (value: string) => basic(value).normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').replace(/[._-]/g, ' ').replace(/\s+/gu, ' ').trim();
 
 // Adjacent transpositions count as one typo; cap input before quadratic comparison.

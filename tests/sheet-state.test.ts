@@ -33,6 +33,16 @@ describe('explicit Sheets state mapping and repetition', () => {
     expect(repeatDue(source, withValues({ 1: '0', 5: '' }), columns, new Date(2030, 0))).toBe(false);
     expect(repeatDue(source, withValues({ 3: '' }), columns, new Date(2030, 0))).toBe(true);
   });
+  it('allows repetition configured after sending, anchored to the existing sent time', () => {
+    const now = new Date(2026, 9, 13, 14, 30, 42);
+    for (const changes of [{ 1: '' }, { 2: '' }, { 1: '', 2: '' }]) {
+      const row = withValues(changes);
+      expect(repeatDue(source, row, columns, now)).toBe(false);
+      row[1] = '2'; row[2] = '1';
+      expect(sheetStatus(source, row, columns)).toBe('sent');
+      expect(repeatDue(source, row, columns, now)).toBe(true);
+    }
+  });
   it('rejects invalid numbers and missing or malformed dates when repetition is needed', () => {
     for (const changes of [{ 1: '-1' }, { 1: '1.5' }, { 1: '9007199254740992' }, { 2: '0' }, { 2: 'abc' }, { 3: '-1' }, { 3: '1.2' }, { 5: '' }, { 5: '31/02/2026' }])
       expect(() => repeatDue(source, withValues(changes), columns, new Date(2030, 0))).toThrow('SHEET_REPEAT_INVALID');
