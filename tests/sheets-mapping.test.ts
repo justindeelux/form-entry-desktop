@@ -7,6 +7,7 @@ describe('Sheets source', () => {
   it('selects the tab from query or fragment and validates Google URLs', () => {
     expect(parseSheetsUrl('https://docs.google.com/spreadsheets/d/abc/edit#gid=12').exportUrl).toBe('https://docs.google.com/spreadsheets/d/abc/export?format=csv&gid=12');
     expect(parseSheetsUrl('https://docs.google.com/spreadsheets/d/abc/edit?gid=3#gid=12').url).toContain('gid=3');
+    expect(parseSheetsUrl('https://docs.google.com/spreadsheets/u/0/d/abc/edit#gid=12')).toEqual(parseSheetsUrl('https://docs.google.com/spreadsheets/d/abc/edit?gid=12'));
     for (const url of ['http://docs.google.com/spreadsheets/d/abc/edit', 'https://user@docs.google.com/spreadsheets/d/abc/edit', 'https://evil.test/spreadsheets/d/abc/edit', 'https://docs.google.com/spreadsheets/d/abc/edit?gid=oops']) expect(() => parseSheetsUrl(url)).toThrow('SHEETS_URL_INVALID');
   });
   it('preserves Unicode, zero prefixes, commas, multiline and escaped quotes', () => {

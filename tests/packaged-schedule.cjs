@@ -1,13 +1,17 @@
 const { _electron } = require('playwright-core');
+const { waitForState } = require('./wait-for-state.cjs');
 const assert = require('node:assert/strict');
 const { mkdtemp, mkdir } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 (async () => {
   const profile = await mkdtemp(join(tmpdir(), 'form-entry-schedule-'));
-  const application = await _electron.launch({ executablePath: resolve(process.argv[2]), args: ['--smoke-test'], env: { ...process.env, FORM_ENTRY_SMOKE_DATA: profile }, timeout: 60000 });
+  const application = await _electron.launch({ executablePath: resolve(process.argv[2]), args: process.argv.includes('--development') ? [resolve('.'), '--smoke-test'] : ['--smoke-test'], env: { ...process.env, FORM_ENTRY_SMOKE_DATA: profile }, timeout: 60000 });
   try {
-    await application.evaluate(({ utilityProcess }) => {
+    await application.evaluate(({ utilityProcess, app }) => {
+      const require = process.getBuiltinModule('module').createRequire(app.getAppPath() + '/package.json');
+      const { readFileSync, writeFileSync } = require('node:fs');
+      const sheetPath = app.getPath('userData') + '/smoke-sheet.json';
       globalThis.scheduleCommands = []; globalThis.completedData = false;
       const setTimeout = globalThis.setTimeout;
       globalThis.setTimeout = (callback, delay, ...args) => {
@@ -18,7 +22,7 @@ const { join, resolve } = require('node:path');
       utilityProcess.fork = (...args) => {
         const child = fork(...args), post = child.postMessage.bind(child), reloads = new Set();
         child.prependListener('message', message => {
-          if (reloads.delete(message.id) && message.result.ok && globalThis.completedData) message.result.value.rows[1].values[1] = 'Đã bổ sung';
+          if (reloads.delete(message.id) && message.result.ok && globalThis.completedData) { const source = JSON.parse(readFileSync(sheetPath, 'utf8')); source.rows[1].values[1] = 'Đã bổ sung'; writeFileSync(sheetPath, JSON.stringify(source)); message.result.value.rows[1].values[1] = 'Đã bổ sung'; }
         });
         child.postMessage = message => {
           globalThis.scheduleCommands.push(message.command);
@@ -38,7 +42,7 @@ const { join, resolve } = require('node:path');
     await page.getByRole('tab', { name: 'Chưa gửi (2)', exact: true }).waitFor();
     const loaded = await page.evaluate(request => window.desktop.load(request), request);
     assert.equal(loaded.ok, true);
-    const config = { mapping: Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`q-${i}`, `column-${i}`])), defaults: {}, formatting: {}, aliases: { 'q-4': [{ source: 'TP.HCM', option: 'Hồ Chí Minh' }] } };
+    const config = { sheetColumns: { repeat: 'column-6', repeatDays: 'column-7', repeated: 'column-8', result: 'column-9', sentAt: 'column-10' }, mapping: Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`q-${i}`, `column-${i}`])), defaults: {}, formatting: {}, aliases: { 'q-4': [{ source: 'TP.HCM', option: 'Hồ Chí Minh' }] } };
     await page.evaluate(({ request, data, config }) => {
       const saved = JSON.parse(localStorage.getItem('form-entry-settings-v1'));
       const binding = JSON.stringify([request.sheetsUrl, request.formUrl, data.source.columns.map(({ id, label, index }) => [id, label, index]), data.form.fingerprint]);
@@ -60,9 +64,9 @@ const { join, resolve } = require('node:path');
     await page.screenshot({ path: '.local-checks/schedule-modal.png', fullPage: true });
     await dialog.getByRole('button', { name: 'Bắt đầu', exact: true }).click();
     await page.getByRole('button', { name: 'Dừng', exact: true }).waitFor();
-    await page.getByRole('tab', { name: 'Chưa gửi (1)', exact: true }).waitFor();
+
     assert.equal(await reloadButton.isDisabled(), true);
-    assert.equal((await page.evaluate(config => window.desktop.send(config.mapping, config.defaults, config.aliases), config)).error, 'SCHEDULE_ACTIVE');
+    assert.equal((await page.evaluate(config => window.desktop.send(config.mapping, config.defaults, config.aliases, config.formatting, config.sheetColumns), config)).error, 'SCHEDULE_ACTIVE');
     const countdown = page.locator('[aria-label="Đếm ngược lịch gửi"]');
     assert.ok((await countdown.boundingBox()).y < (await page.getByRole('button', { name: 'Dừng', exact: true }).boundingBox()).y);
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
@@ -80,11 +84,11 @@ const { join, resolve } = require('node:path');
     await page.getByRole('tab', { name: 'Đã gửi (1)', exact: true }).waitFor({ timeout: 60000 });
     await application.evaluate(() => { globalThis.completedData = true; });
     await page.getByRole('tab', { name: 'Đã gửi (2)', exact: true }).waitFor({ timeout: 60000 });
-    await page.waitForFunction(async () => { const state = await window.desktop.scheduleState(); return state.ok && state.value.active && !state.value.running; });
+    await waitForState(page, async () => { const state = await window.desktop.scheduleState(); return state.ok && state.value.active && !state.value.running; });
     const prepareCount = await application.evaluate(() => globalThis.scheduleCommands.filter(command => command === 'prepare').length);
     assert.equal(prepareCount, 2, 'Only newly complete source rows submitted');
     const reloadCount = await application.evaluate(() => globalThis.scheduleCommands.filter(command => command === 'reloadSheets').length);
-    await page.waitForFunction(async () => { const state = await window.desktop.scheduleState(); return state.ok && state.value.active && !state.value.running; });
+    await waitForState(page, async () => { const state = await window.desktop.scheduleState(); return state.ok && state.value.active && !state.value.running; });
     // Stop while waiting; no overlapping or repeated submission of archived rows.
     await page.getByRole('button', { name: 'Dừng', exact: true }).click();
     await page.getByRole('button', { name: 'Đặt lịch', exact: true }).waitFor();
@@ -101,8 +105,8 @@ const { join, resolve } = require('node:path');
     await page.getByRole('button', { name: 'Dừng', exact: true }).click();
     await page.getByRole('button', { name: 'Đặt lịch', exact: true }).waitFor();
     // Stop during preparation: completed submit count must not increase.
-    for (const row of sent.value.rows) await page.evaluate(id => window.desktop.deleteHistory(id), row.id);
-    await page.evaluate(() => window.desktop.savePreferences({ retentionHours: 24, fieldDelayMs: 300 }));
+    for (const row of sent.value.rows) await page.evaluate(({ id, columns }) => window.desktop.deleteHistory(id, columns), { id: row.id, columns: config.sheetColumns });
+    await page.evaluate(() => window.desktop.savePreferences({ fieldDelayMs: 300 }));
     const submitCount = await application.evaluate(() => globalThis.scheduleCommands.filter(command => command === 'submit').length);
     const preparing = application.evaluate(() => new Promise(resolve => { globalThis.schedulePrepareHook = resolve; }));
     await page.getByRole('button', { name: 'Đặt lịch', exact: true }).click();

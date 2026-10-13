@@ -5,6 +5,15 @@ import { mapRow } from '../src/shared/mapping';
 const field: FormField = { id: 'q-0', title: 'Thành phố', index: 0, required: true, type: 'dropdown', options: ['Hà Nội', 'Hồ Chí Minh', 'Đà Nẵng'] };
 describe('canonical option matching', () => {
   it.each([' HÀ\u00a0 NỘI ', 'ha noi', 'Hà Nội', 'Hà_Nội', 'Hà-Nội'])('normalizes %s', value => expect(resolveOption(field, value)).toBe('Hà Nội'));
+  it.each(['Tây Ninh 2 (Long An cũ)', 'Tây Ninh 2 (  Long An cũ\u00a0 )'])('ignores whitespace inside parentheses for %s', value => {
+    const option = 'Tây Ninh 2 (Long An cũ )';
+    expect(resolveOption({ ...field, options: [option] }, value)).toBe(option);
+  });
+  it('keeps parenthesis whitespace collisions ambiguous unless the value is exact', () => {
+    const options = ['Tây Ninh 2 (Long An cũ)', 'Tây Ninh 2 (Long An cũ )'];
+    expect(() => resolveOption({ ...field, options }, 'Tây Ninh 2 ( Long An cũ )')).toThrow(FieldValidationError);
+    expect(resolveOption({ ...field, options }, options[1])).toBe(options[1]);
+  });
   it.each(['Hồ Chí Mnh', 'Hồ Chí Mnih'])('accepts a unique small typo %s', value => expect(resolveOption(field, value)).toBe('Hồ Chí Minh'));
   it('stops at normalization ambiguity, while exact match wins', () => {
     const ambiguous = { ...field, options: ['Hòa', 'Hóa'] };

@@ -19,6 +19,16 @@ describe('Sheets browser session access', () => {
     expect(fake.context.cookies).not.toHaveBeenCalled();
     expect(fake.page.goto).not.toHaveBeenCalled();
   });
+  it('retains columns when loading a header-only table or blank data rows', async () => {
+    for (const body of ['Họ tên,Kết quả,Gửi lúc\n', 'Họ tên,Kết quả,Gửi lúc\n,,\n,,']) {
+      const fake = setup(false, [{ status: 200, body }]);
+      expect(await loadSheets(fake.context, fake.page, url, false, undefined, true)).toEqual({
+        columns: ['Họ tên', 'Kết quả', 'Gửi lúc'].map((label, index) => ({ id: `column-${index}`, index, label, sample: '' })), rows: [],
+      });
+    }
+    const missingHeaders = setup(false, [{ status: 200, body: '' }]);
+    await expect(loadSheets(missingHeaders.context, missingHeaders.page, url, false, undefined, true)).rejects.toThrow('SHEETS_EMPTY');
+  });
   it('asks for login before reading/exporting data', async () => {
     const fake = setup(false, []);
     await expect(loadSheets(fake.context, fake.page, url, true)).rejects.toThrow('LOGIN_REQUIRED');
@@ -48,5 +58,13 @@ describe('Sheets browser session access', () => {
     }
     const fake = setup(true, [{ status: 200, headers: { 'content-length': '10485761' } }]);
     await expect(loadSheets(fake.context, fake.page, url, true)).rejects.toThrow('SHEETS_TOO_LARGE');
+  });
+  it('retries temporary export failures and distinguishes them from permission failures', async () => {
+    const recovered = setup(false, [{ status: 429 }, { status: 503 }, { status: 200, body: 'Tên\nÁnh' }]);
+    expect((await loadSheets(recovered.context, recovered.page, url)).rows).toHaveLength(1);
+    expect(recovered.get).toHaveBeenCalledTimes(3);
+    const failed = setup(false, [{ status: 503 }, { status: 503 }, { status: 503 }]);
+    await expect(loadSheets(failed.context, failed.page, url)).rejects.toThrow('SHEETS_EXPORT_FAILED');
+    expect(failed.get).toHaveBeenCalledTimes(3);
   });
 });

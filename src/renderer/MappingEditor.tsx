@@ -1,8 +1,8 @@
 import { CircleHelp } from 'lucide-react';
 import { useState } from 'react';
-import { ActionIcon, Group, Tooltip, Card, Checkbox, MultiSelect, Popover, Radio, Select, Text, TextInput, Title } from '@mantine/core';
+import { ActionIcon, Group, Tooltip, Card, Checkbox, MultiSelect, Popover, Radio, Select, SimpleGrid, Text, TextInput, Title } from '@mantine/core';
 import { Handle, Position, ReactFlow, type Node, type NodeProps } from '@xyflow/react';
-import type { Formatting, Defaults, FormField, LoadedData, Mapping } from '../shared/contracts';
+import type { Formatting, Defaults, FormField, LoadedData, Mapping, SheetColumns } from '../shared/contracts';
 import { normalizeDate, normalizeDateTime } from '../shared/mapping';
 import '@xyflow/react/dist/style.css';
 
@@ -63,7 +63,7 @@ function MappingCard({ data }: NodeProps<CardNode>) {
 }
 const lineColors = ['#e03131', '#1971c2', '#2b8a3e', '#862e9c', '#e67700', '#0891b2', '#7f5539', '#5c940d', '#364fc7', '#a61e4d', '#495057', '#0b7285'];
 const nodeTypes = { card: MappingCard };
-export function MappingEditor({ data, mapping, defaults, formatting, disabled, onChange, onDefaultsChange, onFormattingChange }: { data: LoadedData; formatting: Formatting; onFormattingChange: (value: Formatting) => void; mapping: Mapping; defaults: Defaults; onDefaultsChange: (defaults: Defaults) => void; disabled: boolean; onChange: (mapping: Mapping) => void }) {
+export function MappingEditor({ data, mapping, defaults, formatting, sheetColumns, onSheetColumnsChange, disabled, onChange, onDefaultsChange, onFormattingChange }: { data: LoadedData; sheetColumns: SheetColumns; onSheetColumnsChange: (value: SheetColumns) => void; formatting: Formatting; onFormattingChange: (value: Formatting) => void; mapping: Mapping; defaults: Defaults; onDefaultsChange: (defaults: Defaults) => void; disabled: boolean; onChange: (mapping: Mapping) => void }) {
   const choices = data.source.columns.map(column => ({ value: column.id, label: `${column.index + 1}. ${column.label}` }));
   const change = (field: string, column: string | null) => {
     const next = { ...mapping }; if (column) next[field] = column; else delete next[field]; onChange(next);
@@ -78,7 +78,16 @@ export function MappingEditor({ data, mapping, defaults, formatting, disabled, o
   ];
   const valid = (connection: { source: string; target: string }) => !disabled && data.source.columns.some(column => column.id === connection.source) &&
     data.form.fields.some(field => field.id === connection.target && field.type !== 'unsupported') && !mapping[connection.target];
-  return <div className="mapping-scroll">
+  return <><Card withBorder padding="sm">
+    <Text size="sm" fw={500}>Cột lưu trạng thái trên Sheets</Text>
+    <Text size="xs" c="dimmed" mb="sm">Chọn cột Kết quả và Gửi lúc để lưu mỗi lần gửi. Muốn tự nhập lại, chọn đủ ba cột lặp lại. Các cột được dùng đúng theo lựa chọn của bạn.</Text>
+    <SimpleGrid cols={{ base: 1, sm: 3 }}>
+      {([['result', 'Kết quả'], ['sentAt', 'Gửi lúc'], ['repeat', 'Lặp lại'], ['repeatDays', 'Lặp lại sau (ngày)'], ['repeated', 'Đã nhập lại (số lần)']] as const).map(([key, label]) =>
+        <Select key={key} label={label} required={key === 'result' || key === 'sentAt'} placeholder="Chọn cột Sheets" searchable clearable
+          data={choices.map(choice => ({ ...choice, disabled: Object.entries(sheetColumns).some(([other, id]) => other !== key && id === choice.value) }))}
+          value={sheetColumns[key] ?? null} disabled={disabled} onChange={value => { const next = { ...sheetColumns }; if (value) next[key] = value; else delete next[key]; onSheetColumnsChange(next); }} />)}
+    </SimpleGrid>
+  </Card><div className="mapping-scroll">
     <div className="mapping-titles"><Title order={3} size="sm">Google Sheets</Title><Title order={3} size="sm">Google Form</Title></div>
     <div style={{ height: Math.max(data.source.columns.length, data.form.fields.length) * 48 + 20, width: 950 }}>
     <ReactFlow nodes={nodes} edges={Object.entries(mapping).map(([target, source]) => ({ id: target, source, target, animated: false,
@@ -88,5 +97,5 @@ export function MappingEditor({ data, mapping, defaults, formatting, disabled, o
       nodesFocusable={false} edgesFocusable={false}
       isValidConnection={valid} onConnect={connection => { if (valid(connection)) change(connection.target, connection.source); }}
       deleteKeyCode={null} />
-  </div></div>;
+  </div></div></>;
 }

@@ -8,7 +8,7 @@ const { join, resolve } = require('node:path');
   for (const mode of ['opening', 'idle', 'waiting', 'preparing', 'submitting']) {
     const profile = await mkdtemp(join(tmpdir(), 'form-entry-close-'));
     const report = join(profile, 'close-check.json');
-    const application = await _electron.launch({ executablePath: resolve(process.argv[2]), args: ['--smoke-test'], env: { ...process.env, FORM_ENTRY_SMOKE_DATA: profile }, timeout: 60000 });
+    const application = await _electron.launch({ executablePath: resolve(process.argv[2]), args: process.argv.includes('--development') ? [resolve('.'), '--smoke-test'] : ['--smoke-test'], env: { ...process.env, FORM_ENTRY_SMOKE_DATA: profile }, timeout: 60000 });
     let stderr = '';
     application.process().stderr.on('data', chunk => { stderr += chunk; });
     let exited = false;
@@ -19,10 +19,10 @@ const { join, resolve } = require('node:path');
         globalThis.closeCommands = [];
         process.on('uncaughtException', error => { writeFileSync(report, JSON.stringify({ error: error.stack })); app.exit(90); });
         app.on('will-quit', () => {
-          const Database = require('better-sqlite3');
-          const db = new Database(app.getPath('userData') + '/phase0.sqlite', { readonly: true });
-          const sent = db.prepare('SELECT COUNT(*) AS count FROM sent_history').get().count;
-          db.close(); writeFileSync(report, JSON.stringify({ commands: globalThis.closeCommands, sent }));
+          const { existsSync, readFileSync } = require('node:fs');
+          const path = app.getPath('userData') + '/smoke-sheet.json';
+          const sent = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).rows.filter(row => row.values[9] === 'Đã gửi').length : 0;
+          writeFileSync(report, JSON.stringify({ commands: globalThis.closeCommands, sent }));
         });
         const fork = utilityProcess.fork.bind(utilityProcess);
         utilityProcess.fork = (...args) => {
@@ -44,13 +44,13 @@ const { join, resolve } = require('node:path');
       if (mode !== 'idle' && mode !== 'opening') {
         const source = { sheetsUrl: 'https://docs.google.com/spreadsheets/d/local-fixture/edit?gid=0', formUrl: 'https://docs.google.com/forms/d/e/local-fixture/viewform' };
         assert.equal((await page.evaluate(source => window.desktop.load(source), source)).ok, true);
-        const send = { mapping: Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`q-${i}`, `column-${i}`])), aliases: { 'q-4': [{ source: 'TP.HCM', option: 'Hồ Chí Minh' }] } };
+        const send = { sheetColumns: { repeat: 'column-6', repeatDays: 'column-7', repeated: 'column-8', result: 'column-9', sentAt: 'column-10' }, mapping: Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`q-${i}`, `column-${i}`])), aliases: { 'q-4': [{ source: 'TP.HCM', option: 'Hồ Chí Minh' }] } };
         if (mode === 'waiting') {
           assert.equal((await page.evaluate(({ source, send }) => window.desktop.startSchedule({ source, send, rule: { mode: 'interval', minutes: 1 } }), { source, send })).ok, true);
         } else {
           if (mode === 'preparing') await page.evaluate(() => window.desktop.savePreferences({ fieldDelayMs: 300 }));
           // Do not await sending: close while the worker is preparing or returning a Submit outcome.
-          await page.evaluate(send => { void window.desktop.send(send.mapping, {}, send.aliases); }, send);
+          await page.evaluate(send => { void window.desktop.send(send.mapping, {}, send.aliases, {}, send.sheetColumns); }, send);
           await application.evaluate((_, command) => new Promise(resolve => {
             const timer = setInterval(() => {
               if (globalThis.closeCommands.includes(command)) { clearInterval(timer); resolve(); }

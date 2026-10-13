@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { mappingBinding, readSettings, restoreAliases, restoreFormatting, restoreDefaults, restoreMapping, saveSettings } from '../src/renderer/settings';
+import { mappingBinding, readSettings, restoreSheetColumns, restoreAliases, restoreFormatting, restoreDefaults, restoreMapping, saveSettings } from '../src/renderer/settings';
 import { sourceFromCsv } from '../src/sources/sheets';
 import type { LoadedData } from '../src/shared/contracts';
 const data: LoadedData = { source: sourceFromCsv('Tên\nÁnh'), form: { fingerprint: 'schema-1', fields: [{ id: 'q-0', index: 0, title: 'Tên', type: 'text', required: true, options: [] }] } };
-const settings = { sheetsUrl: 'https://docs.google.com/spreadsheets/d/abc/edit#gid=0', formUrl: 'https://docs.google.com/forms/d/e/abc/viewform', requireLogin: false, formatting: {}, aliases: {}, defaults: { 'q-0': 'Mặc định' }, mapping: { 'q-0': 'column-0' } };
+const settings = { sheetsUrl: 'https://docs.google.com/spreadsheets/d/abc/edit#gid=0', formUrl: 'https://docs.google.com/forms/d/e/abc/viewform', requireLogin: false, sheetColumns: {}, formatting: {}, aliases: {}, defaults: { 'q-0': 'Mặc định' }, mapping: { 'q-0': 'column-0' } };
 function storage() {
   let text: string | null = null;
   return { getItem: () => text, setItem: (_key: string, value: string) => { text = value; } };
 }
 describe('immediate local settings', () => {
   it('starts with login unchecked and empty URLs/mapping', () => {
-    expect(readSettings(storage()).settings).toEqual({ sheetsUrl: '', formUrl: '', requireLogin: false, formatting: {}, aliases: {}, defaults: {}, mapping: {} });
+    expect(readSettings(storage()).settings).toEqual({ sheetsUrl: '', formUrl: '', requireLogin: false, sheetColumns: {}, formatting: {}, aliases: {}, defaults: {}, mapping: {} });
   });
   it('saves each change synchronously and restores URLs, login and mapping', () => {
     const store = storage();
@@ -62,6 +62,14 @@ describe('immediate local settings', () => {
   it('reads older settings with no defaults', () => {
     const { defaults, ...older } = settings;
     expect(readSettings({ getItem: () => JSON.stringify(older) }).settings.defaults).toEqual({});
+  });
+  it('restores explicitly selected Sheets controls only with the same binding, never from header names', () => {
+    const sheet = { ...data, source: sourceFromCsv('Kết quả,Gửi lúc\nChưa gửi,') };
+    const saved = { ...settings, sheetColumns: { result: 'column-0', sentAt: 'column-1' }, binding: mappingBinding(sheet, settings) };
+    expect(restoreSheetColumns(saved, sheet)).toEqual(saved.sheetColumns);
+    expect(restoreSheetColumns({ ...saved, binding: undefined }, sheet)).toEqual({});
+    expect(restoreSheetColumns({ ...saved, sheetColumns: {} }, sheet)).toEqual({});
+    expect(restoreSheetColumns(saved, { ...sheet, source: sourceFromCsv('Gửi lúc,Kết quả\n,Chưa gửi') })).toEqual({});
   });
   it('reports corrupt/unavailable storage and does not pretend a failed save succeeded', () => {
     expect(readSettings({ getItem: () => 'invalid json' }).error).toBeDefined();

@@ -5,7 +5,7 @@ const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 (async () => {
   const profile = await mkdtemp(join(tmpdir(), 'form-entry-reload-'));
-  const application = await _electron.launch({ executablePath: resolve(process.argv[2]), args: ['--smoke-test'], env: { ...process.env, FORM_ENTRY_SMOKE_DATA: profile }, timeout: 60000 });
+  const application = await _electron.launch({ executablePath: resolve(process.argv[2]), args: process.argv.includes('--development') ? [resolve('.'), '--smoke-test'] : ['--smoke-test'], env: { ...process.env, FORM_ENTRY_SMOKE_DATA: profile }, timeout: 60000 });
   try {
     await application.evaluate(({ utilityProcess }) => {
       globalThis.reloadCommands = [];
@@ -26,7 +26,7 @@ const { join, resolve } = require('node:path');
     await page.getByRole('tab', { name: 'Chưa gửi (2)', exact: true }).waitFor();
     const loaded = await page.evaluate(request => window.desktop.load(request), request);
     assert.equal(loaded.ok, true);
-    const config = { mapping: Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`q-${i}`, `column-${i}`])), defaults: {}, formatting: {}, aliases: { 'q-4': [{ source: 'TP.HCM', option: 'Hồ Chí Minh' }] } };
+    const config = { sheetColumns: { result: 'column-9', sentAt: 'column-10' }, mapping: Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`q-${i}`, `column-${i}`])), defaults: {}, formatting: {}, aliases: { 'q-4': [{ source: 'TP.HCM', option: 'Hồ Chí Minh' }] } };
     await page.evaluate(({ request, data, config }) => {
       const saved = JSON.parse(localStorage.getItem('form-entry-settings-v1'));
       const binding = JSON.stringify([request.sheetsUrl, request.formUrl, data.source.columns.map(({ id, label, index }) => [id, label, index]), data.form.fingerprint]);
@@ -44,7 +44,7 @@ const { join, resolve } = require('node:path');
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('form-entry-settings-v1')));
     for (const key of Object.keys(config)) assert.deepEqual(saved[key], config[key]);
     assert.equal(await page.getByRole('button', { name: 'Chỉnh sửa mapping', exact: true }).getAttribute('aria-expanded'), 'false');
-    assert.deepEqual((await application.evaluate(() => globalThis.reloadCommands)).slice(commandsBefore.length), ['reloadSheets']);
+    assert.deepEqual((await application.evaluate(() => globalThis.reloadCommands)).slice(commandsBefore.length), ['reloadSheets', 'readSheets']);
     await page.getByRole('button', { name: 'Gửi 2 dòng lên Form', exact: true }).click();
     await page.getByText('Đã gửi 2/2 dòng. Hoàn tất.', { exact: true }).waitFor({ timeout: 60000 });
     const send = await page.getByRole('button', { name: 'Gửi 0 dòng lên Form', exact: true }).boundingBox();

@@ -1,4 +1,11 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import type { BrowserContext } from 'playwright-core';
+
+export async function requireGoogleSession(context: BrowserContext, required: boolean) {
+  if (!required) return;
+  const cookies = await context.cookies('https://accounts.google.com');
+  if (!cookies.some(cookie => cookie.value && ['SID', '__Secure-1PSID', '__Secure-3PSID'].includes(cookie.name))) throw new Error('LOGIN_REQUIRED');
+}
 
 export function loginArguments(profilePath: string, url: string): string[] {
   // Sign-in runs without Playwright, remote debugging or automation flags.

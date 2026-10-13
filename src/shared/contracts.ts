@@ -17,7 +17,7 @@ export function parseFormUrl(value: string): string {
 export function parseSheetsUrl(value: string): { url: string; exportUrl: string } {
   let url: URL;
   try { url = new URL(value); } catch { throw new Error('SHEETS_URL_INVALID'); }
-  const match = url.pathname.match(/^\/spreadsheets\/d\/([\w-]+)(?:\/edit)?\/?$/);
+  const match = url.pathname.match(/^\/spreadsheets\/(?:u\/\d+\/)?d\/([\w-]+)(?:\/edit)?\/?$/);
   if (url.protocol !== 'https:' || url.hostname !== 'docs.google.com' || url.port || url.username || url.password || !match) throw new Error('SHEETS_URL_INVALID');
   const gid = url.searchParams.get('gid') ?? new URLSearchParams(url.hash.slice(1)).get('gid') ?? '0';
   if (!/^\d+$/.test(gid)) throw new Error('SHEETS_URL_INVALID');
@@ -55,7 +55,12 @@ export const aliasesSchema = z.record(z.string().max(200), z.array(z.object({ so
 export type Aliases = z.infer<typeof aliasesSchema>;
 export const formattingSchema = z.record(z.string().max(200), z.object({ name: z.boolean().optional(), phone: z.boolean().optional() }).strict());
 export type Formatting = z.infer<typeof formattingSchema>;
-export const sendSchema = z.object({ mapping: mappingSchema, defaults: defaultsSchema.default({}), aliases: aliasesSchema.default({}), formatting: formattingSchema.default({}) }).strict();
+export const sheetColumnsSchema = z.object({
+  repeat: z.string().optional(), repeatDays: z.string().optional(), repeated: z.string().optional(),
+  result: z.string().optional(), sentAt: z.string().optional(),
+}).strict();
+export type SheetColumns = z.infer<typeof sheetColumnsSchema>;
+export const sendSchema = z.object({ mapping: mappingSchema, defaults: defaultsSchema.default({}), aliases: aliasesSchema.default({}), formatting: formattingSchema.default({}), sheetColumns: sheetColumnsSchema.default({}) }).strict();
 export type Mapping = z.infer<typeof mappingSchema>;
 export type Progress = { submitted: number; total: number; state: 'running' | 'submitted' | 'failed' | 'unknown' | 'stopped'; row?: number; reason?: 'SUBMIT_NOT_CLICKED' };
 export type ValidationDetails = { fieldId: string; fieldTitle: string; reason: string; row?: number; column?: string; choice?: { source: string; options: string[] } };
@@ -67,16 +72,16 @@ export class FieldValidationError extends Error {
 }
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string; details?: ValidationDetails };
 export const reviewSchema = z.object({ batch: z.string().regex(/^[a-f0-9]{64}$/), row: z.number().int().positive() }).strict();
-export type PendingSubmission = z.infer<typeof reviewSchema>;
-export const preferencesSchema = z.object({ retentionHours: z.number().int().min(1).max(8760), sendDelaySeconds: z.number().int().min(0).max(3600).default(0), fieldDelayMs: z.number().int().min(0).max(60000).default(0), deleteExpired: z.boolean().default(false), minimizeChrome: z.boolean().default(false) }).strict();
+export type PendingSubmission = z.infer<typeof reviewSchema> & { state: 'unknown' | 'submitted'; sourceUrl: string };
+export const preferencesSchema = z.object({ sendDelaySeconds: z.number().int().min(0).max(3600).default(0), fieldDelayMs: z.number().int().min(0).max(60000).default(0), minimizeChrome: z.boolean().default(false) }).strict();
 export type Preferences = z.infer<typeof preferencesSchema>;
 export const historyCursorSchema = z.object({ order: z.number().int().positive(), id: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 export type HistoryCursor = z.infer<typeof historyCursorSchema>;
 export const historyQuerySchema = sendSchema.extend({ status: z.enum(['unsent', 'sent']), cursor: historyCursorSchema.optional(), search: z.string().max(200).default(''), column: z.number().int().min(0).max(199).optional() }).strict();
 export type HistoryQuery = z.infer<typeof historyQuerySchema>;
 export type HistoryRow = { id: string; order: number; number: number; columns: string[]; values: string[]; sentAt?: number; state: 'unsent' | 'sent' | 'unknown' };
-export type HistoryPage = { rows: HistoryRow[]; nextCursor?: HistoryCursor; unsentCount: number; sentCount: number; retentionHours: number; deleteExpired: boolean };
-export const historyDeleteSchema = z.object({ id: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
+export type HistoryPage = { rows: HistoryRow[]; nextCursor?: HistoryCursor; unsentCount: number; sentCount: number };
+export const historyDeleteSchema = z.object({ id: z.string().regex(/^[a-f0-9]{64}$/), sheetColumns: sheetColumnsSchema }).strict();
 export const formViewSchema = sendSchema.extend({ id: historyDeleteSchema.shape.id, status: z.enum(['unsent', 'sent']) }).strict();
 export const formSnapshotSchema = z.object({ formUrl: z.string().max(2000), form: inspectionSchema, payload: payloadSchema });
 export type FormSnapshot = z.infer<typeof formSnapshotSchema>;
@@ -90,7 +95,13 @@ export const scheduleStartSchema = z.object({ source: loadSchema, send: sendSche
 export type ScheduleRequest = z.infer<typeof scheduleStartSchema>;
 export type ScheduleState = { active: boolean; running: boolean; startedAt?: number; nextRunAt?: number; error?: string; details?: ValidationDetails; data?: LoadedData };
 export type UpdateState = { status: 'unsupported' | 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error' | 'installing'; version?: string; percent?: number; releaseNotes?: string };
+export type GoogleConnection = { configured: boolean; connected: boolean };
+export type GoogleSelection = { connection: GoogleConnection; url: string; tabs: { id: number; title: string }[] };
 export interface DesktopApi {
+  googleState(): Promise<Result<GoogleConnection>>;
+  connectGoogle(): Promise<Result<GoogleSelection>>;
+  cancelGoogle(): Promise<Result<void>>;
+  disconnectGoogle(): Promise<Result<GoogleConnection>>;
   checkForUpdates(): Promise<Result<void>>;
   installUpdate(): Promise<Result<void>>;
   updateState(): Promise<Result<UpdateState>>;
@@ -103,13 +114,14 @@ export interface DesktopApi {
   deleteProfile(): Promise<Result<void>>;
   reloadSheets(request: z.infer<typeof loadSchema>): Promise<Result<LoadedData>>;
   load(request: z.infer<typeof loadSchema>): Promise<Result<LoadedData>>;
-  send(mapping: Mapping, defaults?: Defaults, aliases?: Aliases, formatting?: Formatting): Promise<Result<Progress>>;
+  send(mapping: Mapping, defaults?: Defaults, aliases?: Aliases, formatting?: Formatting, sheetColumns?: SheetColumns): Promise<Result<Progress>>;
   history(query: HistoryQuery): Promise<Result<HistoryPage>>;
-  deleteHistory(id: string): Promise<Result<void>>;
+  deleteHistory(id: string, sheetColumns: SheetColumns): Promise<Result<void>>;
   preferences(): Promise<Result<Preferences>>;
   savePreferences(preferences: Preferences): Promise<Result<Preferences>>;
   pendingSubmissions(): Promise<Result<PendingSubmission[]>>;
-  confirmNotSent(request: PendingSubmission): Promise<Result<void>>;
+  confirmNotSent(request: z.infer<typeof reviewSchema>): Promise<Result<void>>;
+  confirmSent(request: z.infer<typeof reviewSchema>): Promise<Result<void>>;
   onProgress(callback: (progress: Progress) => void): () => void;
 }
 

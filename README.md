@@ -1,17 +1,31 @@
 # Form Entry Desktop
 
-A local desktop app that reads a Google Sheets tab and submits its rows to a Google Form. Built with Electron, TypeScript, React, Mantine, React Flow, Playwright, and SQLite. The interface is in Vietnamese.
+A local desktop app that reads a Google Sheets tab and submits its rows to a Google Form. Built with Electron, TypeScript, React, Mantine, React Flow, and Playwright. The interface is in Vietnamese.
 
 ## Usage
 
-1. Open the desired Sheets tab and copy its full URL, including `gid`.
-2. Paste the Sheets URL and Form URL into the app. Enable Google login only when needed, then load the data.
-3. Map columns to Form fields and optionally set defaults or formatting.
+1. Click **Kết nối Google**. In the system browser, sign in and select the Sheets file you want the app to access.
+2. Select **Tab Sheets**, paste the Form URL, then load the data. You may paste another tab URL within an already authorized file. To grant access to another file, click **Chọn Sheets**. The connected account must be able to edit the file.
+3. Map columns to Form fields and optionally set defaults or formatting. In **Cột lưu trạng thái trên Sheets**, explicitly select **Kết quả** and **Gửi lúc**. Each control must use a distinct column; the app never chooses columns from header names.
 4. Submit the rows, or schedule submissions while the app is open.
 
-Google Chrome must be installed. Row 1 is the header; blank rows are skipped. Only single-page Forms are supported. Sheets input is limited to 10 MB, 200 columns, and 10,000 data rows. No Google API key is required.
+Google Chrome must be installed. Row 1 is the header; blank rows are skipped. Only single-page Forms are supported. Sheets input is limited to 10 MB, 200 columns, and 10,000 data rows. Sheets are read and updated through the official API; Chrome is used only for Google Forms. The **Yêu cầu đăng nhập Google** option applies to Form login in the private Chrome profile, which is separate from the Sheets OAuth connection.
 
-Configuration, the private Chrome profile, and submission history are stored locally. **Settings → Xóa profile** resets all app data, including sent history and duplicate protection. Google Form responses remain, so previously sent rows can be submitted again.
+A tab with headers and no data rows can be loaded or reloaded. Configure mapping and start a schedule while it is empty; later scheduled passes read newly added rows.
+
+After a confirmed submission, the app writes **Đã gửi** and a full timestamp into the selected columns. The history table reads the current Sheet; Form previews use the current mapping and values. **Đánh dấu chưa gửi** changes the selected result to **Chưa gửi**, clears the sent time and resets the repeat counter on Sheets.
+
+For automatic repeats, explicitly select all three additional columns: **Lặp lại** (maximum additional sends), **Lặp lại sau (ngày)** (whole days, at least 1), and **Đã nhập lại (số lần)** (completed additional sends). Repeats run only while a schedule is active. A blank limit or interval skips repetition; a blank completed count means zero. Each scheduled pass sends at most one repeat per due row, increments its counter and replaces its sent timestamp. The next due date is based on this latest timestamp. Invalid repeat controls or a missing/invalid timestamp on otherwise eligible rows stop the schedule. Days and times use the computer's local timezone.
+
+Row data and sent state stay on Sheets. The app keeps configuration, its private Chrome profile, an encrypted Google refresh token, and a small JSON recovery journal locally. OAuth tokens never enter the renderer or localStorage; **Ngắt kết nối** revokes the connection and removes the local token. The system credential store must support encryption (Linux plaintext fallback is refused). This journal contains row hashes, positions and control updates, without storing Form payloads. If a Form was submitted but the Sheet write failed, **Cập nhật Sheets** completes the write without submitting again. Uncertain submissions require checking the Form responses before choosing **đã gửi** or **chưa gửi**. Keep the original row position and contents until recovery finishes.
+
+Existing SQLite history is opened read-only for migration. On the next send with explicit control mapping, matching old sent records are marked on Sheets before new submissions; the old database is preserved. Unknown legacy submissions still require review. **Settings → Xóa profile** removes all local user data: Chrome login, OAuth tokens, cookies/cache, URLs, mapping, preferences, JSON recovery records and legacy SQLite history. It revokes the Google connection when possible and removes local credentials even if Google is unavailable. Sheets and Form responses on Google are not deleted. Unfinished recovery records are discarded, so check already-submitted responses before importing those rows again. Use **Ngắt kết nối** to disconnect Google without resetting the rest of the app. With **Yêu cầu đăng nhập Google** checked, a cleared Chrome profile must sign in before the Form is loaded, even if the Form is public.
+
+Run only one app against a given tab at a time. The app checks for edits before submitting and writing, but Google Form submission and Sheet updates are separate operations, so simultaneous writers cannot be made atomic. Keep the tab editable and the app open while its schedule runs.
+
+## Google Cloud configuration
+
+The app owner configures one Desktop OAuth client before distributing the app. End users do not create Cloud projects or supply credentials. See [Google Cloud setup](docs/google-cloud-setup.md). Download the Desktop client JSON as `google-oauth.json` in the project root before packaging; it is ignored by Git. Development also accepts `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`. No Picker API key or hosted callback server is needed.
 
 ## Development
 
@@ -45,11 +59,19 @@ npm run make -- --platform=win32 --arch=x64
 
 Packaged apps are in `out/`. Windows installers are in `out/make/nsis/`; run `FormEntryDesktop-Setup-<version>.exe` to install. The wizard shows an introduction, lets you choose the installation folder, and offers a launch checkbox when finished. Portable ZIPs are in `out/make/zip/win32/x64/`; extract and run `FormEntryDesktop.exe` with all accompanying files. The packaged app does not require Node.js or npm.
 
-If native dependency compilation fails on Windows, install Python 3 and Visual Studio Build Tools with **Desktop development with C++**.
+The SQLite native dependency is no longer required.
+
+The integration checks use local Form/Sheets fixtures and never submit a real Google Form. To run them against the installed development Electron runtime after building:
+
+```sh
+node tests/packaged-smoke.cjs <electron-executable> --development
+node tests/packaged-history.cjs <electron-executable> --development
+node tests/packaged-close.cjs <electron-executable> --development
+```
 
 ## Releases and updates
 
-The **Release Windows** workflow runs only for `v*` tags or manual dispatch. It tests and builds Windows x64, checks the packaged and installed apps with local fixtures, and uploads the installer and portable ZIP. Manual runs create artifacts only.
+The **Release Windows** workflow runs only for `v*` tags or manual dispatch. It tests and builds Windows x64, checks the packaged and installed apps with local fixtures, and uploads the installer and portable ZIP. Manual runs create artifacts only. Set the repository Actions secret `GOOGLE_OAUTH_JSON` to the downloaded Desktop OAuth JSON; the workflow includes it in the app and checks the packaged configuration.
 
 To prepare a release, bump `version` in `package.json` and `package-lock.json`, commit, then push a matching tag:
 

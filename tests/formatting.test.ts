@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mapRow } from '../src/shared/mapping';
 import { sendSchema, type LoadedData } from '../src/shared/contracts';
 import { sourceFromCsv } from '../src/sources/sheets';
-import { sheetRowId } from '../src/main/row-history';
+import { sheetRows } from '../src/main/row-history';
 const data: LoadedData = { source: sourceFromCsv('Tên,SĐT\nnguyễn đỨc TOÀN,123456789'), form: { fingerprint: 'format-fixture', fields: [
   { id: 'name', index: 0, title: 'Tên', type: 'text', required: true, options: [] },
   { id: 'phone', index: 1, title: 'SĐT', type: 'text', required: false, options: [] },
@@ -12,10 +12,10 @@ const formatting = { name: { name: true }, phone: { phone: true } };
 describe('format only outgoing Form values', () => {
   it('title-cases Vietnamese names and adds one leading zero without mutating source or identity', () => {
     const original = structuredClone(data.source);
-    const id = sheetRowId(data.source, data.source.rows[0].values);
+    const id = sheetRows(data.source, {})[0].id;
     expect(mapRow(data, data.source.rows[0].values, mapping, {}, new Date(), {}, formatting)).toEqual({ name: 'Nguyễn Đức Toàn', phone: '0123456789' });
     expect(data.source).toEqual(original);
-    expect(sheetRowId(data.source, data.source.rows[0].values)).toBe(id);
+    expect(sheetRows(data.source, {})[0].id).toBe(id);
     expect(mapRow(data, data.source.rows[0].values, mapping)).toEqual({ name: 'nguyễn đỨc TOÀN', phone: '123456789' });
   });
   it('keeps leading zeros, leaves empty optional cells empty, and preserves Vietnamese accents', () => {
