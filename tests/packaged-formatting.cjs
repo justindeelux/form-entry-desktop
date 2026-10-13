@@ -5,7 +5,7 @@ const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 (async () => {
   const profile = await mkdtemp(join(tmpdir(), 'form-entry-formatting-'));
-  const options = { executablePath: resolve(process.argv[2]), args: ['--smoke-test'], env: { ...process.env, FORM_ENTRY_SMOKE_DATA: profile }, timeout: 60000 };
+  const options = { executablePath: resolve(process.argv[2]), args: process.argv.includes('--development') ? [resolve('.'), '--smoke-test'] : ['--smoke-test'], env: { ...process.env, FORM_ENTRY_SMOKE_DATA: profile }, timeout: 60000 };
   let application = await _electron.launch(options);
   try {
     let page = await application.firstWindow();
@@ -15,13 +15,13 @@ const { join, resolve } = require('node:path');
     await page.getByLabel('URL Google Form').fill(formUrl);
     await page.getByRole('button', { name: 'Tải dữ liệu', exact: true }).click();
     await page.getByRole('tab', { name: 'Chưa gửi (2)', exact: true }).waitFor();
-    const original = await page.evaluate(() => window.desktop.history({ mapping: {}, status: 'unsent' }));
-    const invalidPreview = await page.evaluate(id => window.desktop.viewForm({ id, status: 'unsent', mapping: {} }), original.value.rows[0].id);
+    const original = await page.evaluate(() => window.desktop.history({ sheetColumns: { repeat: 'column-6', repeatDays: 'column-7', repeated: 'column-8', result: 'column-9', sentAt: 'column-10' }, mapping: {}, status: 'unsent' }));
+    const invalidPreview = await page.evaluate(id => window.desktop.viewForm({ id, status: 'unsent', mapping: {}, sheetColumns: { repeat: 'column-6', repeatDays: 'column-7', repeated: 'column-8', result: 'column-9', sentAt: 'column-10' } }), original.value.rows[0].id);
     assert.equal(invalidPreview.ok, false); assert.equal(invalidPreview.details.fieldId, 'q-0');
     await page.evaluate(() => {
       const saved = JSON.parse(localStorage.getItem('form-entry-settings-v1'));
       const mapping = Object.fromEntries([2, 3, 4, 5].map(i => [`q-${i}`, `column-${i}`]));
-      localStorage.setItem('form-entry-settings-v1', JSON.stringify({ ...saved, mapping, aliases: { 'q-4': [{ source: 'TP.HCM', option: 'Hồ Chí Minh' }] } }));
+      localStorage.setItem('form-entry-settings-v1', JSON.stringify({ ...saved, sheetColumns: { repeat: 'column-6', repeatDays: 'column-7', repeated: 'column-8', result: 'column-9', sentAt: 'column-10' }, mapping, aliases: { 'q-4': [{ source: 'TP.HCM', option: 'Hồ Chí Minh' }] } }));
     });
     await page.reload();
     await page.getByRole('button', { name: 'Tải dữ liệu', exact: true }).click();
@@ -29,7 +29,12 @@ const { join, resolve } = require('node:path');
     await page.getByRole('button', { name: 'Chọn cột cho Họ tên *', exact: true }).click();
     await page.getByLabel('Giá trị mặc định cho Họ tên *', { exact: true }).fill('nguyễn đức toàn');
     const nameHelp = page.getByRole('button', { name: 'Giải thích làm đẹp tên', exact: true });
-    await nameHelp.hover();
+    await page.waitForFunction(() => {
+      const help = document.querySelector('button[aria-label="Giải thích làm đẹp tên"]');
+      const popup = help?.closest('.mantine-Popover-dropdown');
+      return popup && getComputedStyle(popup).opacity === '1';
+    });
+    await nameHelp.focus(); await nameHelp.hover();
     await page.getByRole('tooltip').filter({ hasText: 'nguyễn đức toàn → Nguyễn Đức Toàn' }).waitFor();
     await nameHelp.click();
     assert.equal(await page.getByRole('checkbox', { name: 'Làm đẹp tên cho Họ tên *', exact: true }).isChecked(), false);
@@ -74,7 +79,7 @@ const { join, resolve } = require('node:path');
     assert.equal(await page.getByRole('checkbox', { name: 'Làm đẹp tên cho Họ tên *', exact: true }).isChecked(), true);
     assert.equal(await page.getByLabel('Giá trị mặc định cho Họ tên *', { exact: true }).inputValue(), 'nguyễn đức toàn');
     await page.getByRole('heading', { name: 'Google Form', exact: true }).click();
-    const raw = await page.evaluate(() => window.desktop.history({ mapping: {}, status: 'unsent' }));
+    const raw = await page.evaluate(() => window.desktop.history({ sheetColumns: { repeat: 'column-6', repeatDays: 'column-7', repeated: 'column-8', result: 'column-9', sentAt: 'column-10' }, mapping: {}, status: 'unsent' }));
     assert.deepEqual(raw.value.rows.map(({ id, values }) => ({ id, values })), original.value.rows.map(({ id, values }) => ({ id, values })));
     await page.getByRole('button', { name: 'Xem trước form dòng 3', exact: true }).click();
     let dialog = page.getByRole('dialog');
@@ -90,50 +95,22 @@ const { join, resolve } = require('node:path');
     const payloads = await application.evaluate(() => globalThis.fixturePayloads);
     assert.equal(payloads.length, 2);
     for (const payload of payloads) { assert.equal(payload['q-0'], 'Nguyễn Đức Toàn'); assert.equal(payload['q-1'], '0123456789'); }
-    const sent = await page.evaluate(() => window.desktop.history({ mapping: {}, status: 'sent' }));
-    for (const row of sent.value.rows) assert.deepEqual(row.values, original.value.rows.find(item => item.id === row.id).values);
+    const sent = await page.evaluate(() => window.desktop.history({ sheetColumns: { repeat: 'column-6', repeatDays: 'column-7', repeated: 'column-8', result: 'column-9', sentAt: 'column-10' }, mapping: {}, status: 'sent' }));
+    for (const row of sent.value.rows) { assert.deepEqual(row.values.slice(0, 8), original.value.rows.find(item => item.id === row.id).values.slice(0, 8)); assert.equal(row.values[9], 'Đã gửi'); }
     for (const row of sent.value.rows) {
-      const archived = await page.evaluate(id => window.desktop.viewForm({ id, status: 'sent', mapping: {} }), row.id);
+      const archived = await page.evaluate(({ id, saved }) => window.desktop.viewForm({ id, status: 'sent', ...saved }), { id: row.id, saved: { mapping: saved.mapping, defaults: saved.defaults, aliases: saved.aliases, formatting: saved.formatting, sheetColumns: saved.sheetColumns } });
       assert.equal(archived.ok, true);
       assert.deepEqual(archived.value.payload, payloads[row.number === 3 ? 0 : 1]);
     }
-    const repeated = await page.evaluate(saved => window.desktop.send(saved.mapping, saved.defaults, saved.aliases, {}), saved);
-    assert.equal(repeated.ok, true); assert.equal(repeated.value.submitted, 2);
+    const repeated = await page.evaluate(saved => window.desktop.send(saved.mapping, saved.defaults, saved.aliases, {}, saved.sheetColumns), saved);
+    assert.equal(repeated.ok, true); assert.equal(repeated.value.submitted, 0);
     assert.equal((await application.evaluate(() => globalThis.fixturePayloads)).length, 2);
     await page.getByRole('button', { name: 'Reset mapping', exact: true }).click();
     await page.getByRole('button', { name: 'Xác nhận reset', exact: true }).click();
     assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('form-entry-settings-v1')).formatting), {});
-    await page.getByRole('tab', { name: 'Đã gửi (2)', exact: true }).click();
-    await page.getByText('Tự động xóa đang tắt. Dữ liệu đã gửi được giữ trong lịch sử. Phản hồi trên Google Form vẫn được giữ.', { exact: true }).waitFor();
-    const sentTable = page.getByRole('table').first();
-    assert.equal(await sentTable.getByRole('columnheader').first().innerText(), 'Thao tác');
-    assert.equal(await page.getByRole('button', { name: 'Xem form dòng 2', exact: true }).innerText(), '');
-    assert.equal(await page.getByRole('button', { name: 'Xóa lịch sử dòng 2 để gửi lại', exact: true }).innerText(), '');
-    await page.getByRole('button', { name: 'Xem form dòng 2', exact: true }).hover();
-    await page.getByRole('tooltip', { name: 'Xem form', exact: true }).waitFor();
-    await page.getByRole('button', { name: 'Xem form dòng 2', exact: true }).click();
-    dialog = page.getByRole('dialog');
-    await dialog.getByText('Nguyễn Đức Toàn', { exact: true }).waitFor();
-    await dialog.getByText('Hồ Chí Minh', { exact: true }).waitFor();
-    await dialog.getByText('2028-02-29', { exact: true }).waitFor();
-    await page.keyboard.press('Escape');
-    await application.close(); application = await _electron.launch(options); page = await application.firstWindow();
-    await page.getByRole('button', { name: 'Tải dữ liệu', exact: true }).click();
-    await page.getByRole('tab', { name: 'Đã gửi (2)', exact: true }).waitFor();
-    const archivedAfterRestart = await page.evaluate(id => window.desktop.viewForm({ id, status: 'sent', mapping: {} }), sent.value.rows[0].id);
-    assert.equal(archivedAfterRestart.ok, true);
-    assert.equal(archivedAfterRestart.value.payload['q-0'], 'Nguyễn Đức Toàn');
-    await page.getByRole('button', { name: 'Xem trước form dòng 3', exact: true }).count().then(count => assert.equal(count, 0));
-    await application.evaluate(({ app }, id) => {
-      const require = process.getBuiltinModule('module').createRequire(app.getAppPath() + '/package.json');
-      const { join } = require('node:path');
-      const Database = require(join(app.getAppPath(), 'node_modules/better-sqlite3'));
-      const db = new Database(join(app.getPath('userData'), 'phase0.sqlite'));
-      db.prepare('UPDATE sent_history SET sent_at=? WHERE id=?').run(Date.now() - 25 * 3600000, id); db.close();
-    }, sent.value.rows[0].id);
-    await page.evaluate(() => window.desktop.savePreferences({ retentionHours: 24, deleteExpired: true }));
-    const removed = await page.evaluate(id => window.desktop.viewForm({ id, status: 'sent', mapping: {} }), sent.value.rows[0].id);
-    assert.equal(removed.ok, false); assert.equal(removed.error, 'HISTORY_ROW_CHANGED');
-    console.log('PACKAGED_FORMATTING_PASSED', JSON.stringify({ immediateSave: true, restart: true, outgoingValues: true, originalSheetData: true, originalHistory: true, rawIdentityDedup: true, resetClearsFormatting: true, formattingTooltips: true, helpDoesNotToggle: true, formPreviewWithoutSubmit: true, savedPayloadMatchesWorker: true, immutableAfterReset: true, snapshotRestart: true, snapshotExpiry: true, fixtureOnly: true }));
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('form-entry-settings-v1')).sheetColumns), {});
+    const afterReset = await page.evaluate(saved => window.desktop.history({ mapping: {}, sheetColumns: saved.sheetColumns, status: 'sent' }), saved);
+    assert.equal(afterReset.value.sentCount, 2);
+    console.log('PACKAGED_FORMATTING_PASSED', JSON.stringify({ immediateSave: true, restart: true, outgoingValues: true, originalSheetData: true, onlyControlColumnsChanged: true, sheetIdentity: true, resetClearsFormatting: true, formattingTooltips: true, helpDoesNotToggle: true, formPreviewWithoutSubmit: true, previewMatchesCurrentMapping: true, resetRetainsSheetData: true, fixtureOnly: true }));
   } finally { await application.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

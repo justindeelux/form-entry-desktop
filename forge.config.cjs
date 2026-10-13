@@ -6,7 +6,7 @@ module.exports = {
     executableName: 'FormEntryDesktop',
     ignore: [/^\/src($|\/)/, /^\/tests($|\/)/, /^\/\.local-checks($|\/)/],
   },
-  rebuildConfig: { onlyModules: ['better-sqlite3'] },
+  rebuildConfig: { onlyModules: [] },
   makers: [
     { name: '@electron-forge/maker-zip', platforms: ['darwin', 'win32', 'linux'] },
   ],

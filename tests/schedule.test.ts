@@ -11,7 +11,7 @@ describe('scheduled eligibility and boundaries', () => {
     { id: 'note', title: 'Ghi chú', index: 1, required: false, type: 'text', options: [] },
     { id: 'date', title: 'Ngày', index: 2, required: true, type: 'date', options: [] },
   ] } };
-  const config = { mapping: { name: 'column-0', note: 'column-1', date: 'column-2' }, defaults: {}, aliases: {}, formatting: {} };
+  const config = { mapping: { name: 'column-0', note: 'column-1', date: 'column-2' }, defaults: {}, aliases: {}, formatting: {}, sheetColumns: {} };
   it('loads only complete mapped and valid required values, leaving source unchanged', () => {
     const before = JSON.stringify(data);
     expect(completeScheduledRows(data, config).source.rows.map(row => row.number)).toEqual([2]);
@@ -19,7 +19,7 @@ describe('scheduled eligibility and boundaries', () => {
     expect(JSON.stringify(data)).toBe(before);
     expect(() => completeScheduledRows(data, { ...config, mapping: { name: 'missing' } })).toThrow('MAPPING_INVALID');
   });
-  it('supports no eligible rows and an empty scheduled source without changing manual empty errors', () => {
+  it('supports no eligible rows and an empty source when explicitly allowed', () => {
     expect(completeScheduledRows({ ...data, source: { ...data.source, rows: [data.source.rows[2]] } }, config).source.rows).toEqual([]);
     expect(sourceFromCsv('Tên\n', 1, true)).toMatchObject({ rows: [], columns: [{ label: 'Tên', sample: '' }] });
     expect(() => sourceFromCsv('Tên\n')).toThrow('SHEETS_EMPTY');

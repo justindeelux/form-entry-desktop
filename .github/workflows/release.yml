@@ -31,6 +31,8 @@ jobs:
         run: npm run make -- --platform=win32 --arch=x64
       - name: Check packaged app with local fixtures
         run: node tests/packaged-smoke.cjs "out/Form Entry Desktop-win32-x64/FormEntryDesktop.exe"
+      - name: Check Sheets storage and scheduled repeats
+        run: node tests/packaged-history.cjs "out/Form Entry Desktop-win32-x64/FormEntryDesktop.exe"
       - name: Check shutdown safety
         run: node tests/packaged-close.cjs "out/Form Entry Desktop-win32-x64/FormEntryDesktop.exe"
       - name: Install and check Windows app

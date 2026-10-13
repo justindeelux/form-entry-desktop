@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { _electron } = require('playwright-core');
 const { resolve } = require('node:path');
 (async () => {
-  const application = await _electron.launch({ executablePath: resolve(process.argv[2]), args: ['--smoke-test'], timeout: 60000 });
+  const application = await _electron.launch({ executablePath: resolve(process.argv[2]), args: process.argv.includes('--development') ? [resolve('.'), '--smoke-test'] : ['--smoke-test'], timeout: 60000 });
   try {
     await (await application.firstWindow()).getByRole('button', { name: 'Tải dữ liệu', exact: true }).waitFor();
     const result = await application.evaluate(async ({ app }) => {

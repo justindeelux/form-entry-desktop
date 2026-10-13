@@ -2,9 +2,10 @@ import { z } from 'zod';
 
 // Parse calendar parts directly so machine locale/timezone cannot change the source date.
 export function parseTemporal(value: string): { date: string; time: string } | undefined {
-  const match = value.trim().match(/^(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}\/\d{4})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?)?$/i);
+  value = value.trim().replace(/^(\d{1,2}:\d{2}(?::\d{2})?)\s+(\d{1,2}[-/]\d{1,2}[-/]\d{4})$/, '$2 $1');
+  const match = value.match(/^(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?)?$/i);
   if (!match) return;
-  const parts = match[1].includes('/') ? match[1].split('/').reverse() : match[1].split('-');
+  const parts = /^\d{4}-/.test(match[1]) ? match[1].split('-') : match[1].split(/[-/]/).reverse();
   const date = parts.map((part, index) => part.padStart(index ? 2 : 4, '0')).join('-');
   if (date.startsWith('0000') || !z.iso.date().safeParse(date).success) return;
   let hour = Number(match[2] ?? 0);

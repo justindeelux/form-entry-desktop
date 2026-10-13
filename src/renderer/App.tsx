@@ -8,10 +8,18 @@ import type { DesktopApi, LoadedData, Progress, PendingSubmission, ValidationDet
 import { SheetDataTable } from './SheetDataTable';
 import { MappingEditor } from './MappingEditor';
 import { UpdateModal } from './UpdateModal';
-import { mappingBinding, readSettings, restoreAliases, restoreFormatting, restoreDefaults, restoreMapping, saveSettings, type Settings } from './settings';
+import { mappingBinding, readSettings, restoreSheetColumns, restoreAliases, restoreFormatting, restoreDefaults, restoreMapping, saveSettings, type Settings } from './settings';
 
 declare global { interface Window { desktop: DesktopApi } }
 const errors: Record<string, string> = {
+  SHEET_MAPPING_INVALID: 'Chọn hai cột Kết quả/Gửi lúc riêng biệt. Nếu dùng nhập lại, chọn đủ ba cột Lặp lại/Lặp lại sau/Đã nhập lại; mỗi cột chỉ dùng cho một mục.',
+  SHEET_STATUS_INVALID: 'Cột Kết quả chỉ nhận Đã gửi, Chưa gửi hoặc ô trống. Kiểm tra mapping và dữ liệu.',
+  SHEET_REPEAT_INVALID: 'Lặp lại và Đã nhập lại cần là số nguyên không âm; Lặp lại sau cần số ngày nguyên từ 1. Gửi lúc phải là ngày giờ hợp lệ.',
+  SHEET_ROW_CHANGED: 'Dòng hoặc cột Sheets đã thay đổi trong lúc thao tác. Đã dừng; tải lại đúng tab để kiểm tra và hoàn tất lượt đang chờ.',
+  SHEETS_WRITE_FAILED: 'Không cập nhật được Sheets. Kiểm tra quyền chỉnh sửa; nếu có lượt đang chờ, dùng Cập nhật Sheets để tránh gửi trùng.',
+  SHEETS_TAB_CHANGED: 'Chrome chưa mở đúng tab Sheets cần cập nhật. Kiểm tra tab đang mở rồi dùng Cập nhật Sheets để hoàn tất lượt đã gửi.',
+  SHEETS_EDITOR_UNAVAILABLE: 'Không tìm thấy ô chọn địa chỉ trong trình chỉnh sửa Sheets. Kiểm tra Chrome đã mở bảng ở chế độ chỉnh sửa rồi dùng Cập nhật Sheets.',
+  SHEETS_EXPORT_FAILED: 'Google tạm thời không trả dữ liệu Sheets hoặc đang giới hạn lượt tải. Chờ một chút rồi dùng Cập nhật Sheets cho lượt đã gửi.',
   FORM_URL_INVALID: 'Nhập URL Google Form đầy đủ, kết thúc bằng /viewform.',
   SHEETS_URL_INVALID: 'Nhập URL Google Sheets đầy đủ, có tab cần lấy dữ liệu (gid).',
   BROWSER_NOT_FOUND: 'Cần cài Google Chrome để sử dụng tool.',
@@ -20,7 +28,7 @@ const errors: Record<string, string> = {
   LOGIN_DISABLED: 'Nguồn hoặc Form yêu cầu đăng nhập. Bật ô Yêu cầu đăng nhập Google rồi tải lại.',
   LOGIN_BROWSER_OPEN: 'Chrome đăng nhập chưa đóng được. Thoát Chrome của tool rồi bấm Tải dữ liệu lại.',
   SHEETS_ACCESS_DENIED: 'Không tải được Sheets. Kiểm tra quyền đọc/tải bảng tính; nếu cần tài khoản, bật Yêu cầu đăng nhập Google rồi tải lại.',
-  SHEETS_EMPTY: 'Không có dữ liệu từ dòng bắt đầu đã chọn. Dòng 1 là tên cột; kiểm tra số dòng bắt đầu và dữ liệu Sheets.',
+  SHEETS_EMPTY: 'Không tìm thấy cột trong Sheets. Hãy thêm tên cột ở dòng 1 rồi tải lại.',
   SHEETS_TOO_LARGE: 'Sheets vượt giới hạn: 10 MB, 200 cột hoặc 10.000 dòng dữ liệu.',
   SHEETS_DATA_INVALID: 'Dữ liệu Sheets không đọc được. Kiểm tra bảng tính rồi tải lại.',
   FORM_NOT_READY: 'Không đọc được Form. Kiểm tra quyền truy cập trong Chrome rồi tải lại.',
@@ -48,7 +56,7 @@ export function App() {
   const [updateOpen, setUpdateOpen] = useState(false);
   const [initial] = useState(() => readSettings(localStorage));
   const [settings, setSettings] = useState(initial.settings);
-  const { sheetsUrl, formUrl, requireLogin, startRow, mapping, defaults, aliases, formatting } = settings;
+  const { sheetsUrl, formUrl, requireLogin, startRow, mapping, defaults, aliases, formatting, sheetColumns } = settings;
   const [schedule, setSchedule] = useState<ScheduleState>({ active: false, running: false });
   const [scheduleOpen, setScheduleOpen] = useState(false), [scheduleBusy, setScheduleBusy] = useState(false);
   const [scheduleMode, setScheduleMode] = useState('interval');
@@ -60,11 +68,11 @@ export function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [mappingCollapsed, setMappingCollapsed] = useState(false);
   const [historyRevision, setHistoryRevision] = useState(0), [unsentCount, setUnsentCount] = useState<number>();
-  const [preferencesOpen, setPreferencesOpen] = useState(false), [retentionHours, setRetentionHours] = useState<number | string>(24);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesBusy, setPreferencesBusy] = useState(false);
   const [sendDelaySeconds, setSendDelaySeconds] = useState<number | string>(0);
   const [fieldDelayMs, setFieldDelayMs] = useState<number | string>(0);
-  const [deleteExpired, setDeleteExpired] = useState(false), [minimizeChrome, setMinimizeChrome] = useState(false);
+  const [minimizeChrome, setMinimizeChrome] = useState(false);
   const [resetTarget, setResetTarget] = useState<'url' | 'mapping' | 'profile'>();
   function updateSettings(next: Settings) {
     try { saveSettings(localStorage, next); setSaveError(undefined); }
@@ -106,7 +114,7 @@ export function App() {
     if (!rule.success) { setError('Nhập số phút nguyên từ 1–10080, hoặc giờ 0–23 và phút 0–59.'); return; }
     setScheduleBusy(true); setError(undefined); setProgress(undefined);
     try {
-      const result = await window.desktop.startSchedule({ source: { sheetsUrl: sheetsUrl.trim(), formUrl: formUrl.trim(), requireLogin, startRow }, send: { mapping, defaults, aliases, formatting }, rule: rule.data });
+      const result = await window.desktop.startSchedule({ source: { sheetsUrl: sheetsUrl.trim(), formUrl: formUrl.trim(), requireLogin, startRow }, send: { mapping, defaults, aliases, formatting, sheetColumns }, rule: rule.data });
       if (result.ok) { updateSchedule(result.value); setScheduleOpen(false); } else showError(result.error, result.details);
     } catch { setError('Không bắt đầu được lịch gửi.'); }
     finally { setScheduleBusy(false); }
@@ -118,7 +126,7 @@ export function App() {
     finally { setScheduleBusy(false); }
   }
   useEffect(() => window.desktop.onProgress(setProgress), []);
-  useEffect(() => { void window.desktop.preferences().then(result => { if (result.ok) { setRetentionHours(result.value.retentionHours); setSendDelaySeconds(result.value.sendDelaySeconds); setFieldDelayMs(result.value.fieldDelayMs); setDeleteExpired(result.value.deleteExpired); setMinimizeChrome(result.value.minimizeChrome); } else showError(result.error); }).catch(() => setError('Không đọc được cài đặt.')); }, []);
+  useEffect(() => { void window.desktop.preferences().then(result => { if (result.ok) { setSendDelaySeconds(result.value.sendDelaySeconds); setFieldDelayMs(result.value.fieldDelayMs); setMinimizeChrome(result.value.minimizeChrome); } else showError(result.error); }).catch(() => setError('Không đọc được cài đặt.')); }, []);
   const reset = () => { setData(undefined); setCollapsed(false); setProgress(undefined); setError(undefined); setChoice(undefined); setUnsentCount(undefined); setMappingCollapsed(false); };
   const showError = (code: string, details?: ValidationDetails) => {
     setChoice(details?.choice ? details : undefined); setSelectedOption(null);
@@ -138,7 +146,7 @@ export function App() {
       if (result.ok) {
         const restored = restoreMapping(settings, result.value);
         if ((Object.keys(mapping).length || Object.keys(defaults).length || Object.keys(formatting).length) && settings.binding !== mappingBinding(result.value, settings)) setError('Cột Sheets hoặc Form đã thay đổi. Các kết nối, giá trị mặc định và tùy chọn làm đẹp cũ được xóa; hãy kiểm tra lại.');
-        updateSettings({ ...settings, mapping: restored, defaults: restoreDefaults(settings, result.value), aliases: restoreAliases(settings, result.value), formatting: restoreFormatting(settings, result.value), binding: mappingBinding(result.value, settings) });
+        updateSettings({ ...settings, mapping: restored, defaults: restoreDefaults(settings, result.value), aliases: restoreAliases(settings, result.value), formatting: restoreFormatting(settings, result.value), sheetColumns: restoreSheetColumns(settings, result.value), binding: mappingBinding(result.value, settings) });
         setData(result.value); setCollapsed(true); setMappingCollapsed(sheetsOnly ? wasMappingCollapsed : Object.keys(restored).length > 2); setHistoryRevision(value => value + 1);
         await readPending();
         if (result.value.form.fields.some(field => field.type === 'unsupported')) showError('UNSUPPORTED_QUESTION');
@@ -150,11 +158,11 @@ export function App() {
     const result = await window.desktop.pendingSubmissions();
     if (result.ok) { setPending(result.value); setConfirmed([]); } else showError(result.error);
   }
-  async function confirmNotSent(item: PendingSubmission) {
+  async function reviewSubmission(item: PendingSubmission, sent: boolean) {
     setBusy('review');
     try {
-      const result = await window.desktop.confirmNotSent(item);
-      if (!result.ok) { showError(result.error); return; }
+      const result = await window.desktop[sent ? 'confirmSent' : 'confirmNotSent'](item);
+      if (!result.ok) { await readPending(); showError(result.error); return; }
       await readPending(); setProgress(undefined); setError(undefined); setHistoryRevision(value => value + 1);
     } catch { setError('Không cập nhật được trạng thái đối chiếu.'); }
     finally { setBusy(undefined); }
@@ -162,24 +170,23 @@ export function App() {
   async function send() {
     setBusy('send'); setChoice(undefined); setError(undefined); setProgress(undefined);
     try {
-      const result = await window.desktop.send(mapping, defaults, aliases, formatting);
+      const result = await window.desktop.send(mapping, defaults, aliases, formatting, sheetColumns);
       if (result.ok) {
         setProgress(result.value);
         if (result.value.state === 'unknown') await readPending();
       } else {
         showError(result.error, result.details);
-        if (result.error === 'SUBMISSION_UNKNOWN_REVIEW') await readPending();
+        await readPending();
       }
     } catch { setError('Không kết nối được ứng dụng. Kiểm tra phản hồi trước khi gửi lại.'); }
     finally { setBusy(undefined); setHistoryRevision(value => value + 1); }
   }
   async function savePreferences() {
-    if (typeof retentionHours !== 'number' || !Number.isInteger(retentionHours) || retentionHours < 1 || retentionHours > 8760) { setError('Thời gian lưu cần là số giờ nguyên từ 1 đến 8760.'); return; }
     if (typeof sendDelaySeconds !== 'number' || !Number.isInteger(sendDelaySeconds) || sendDelaySeconds < 0 || sendDelaySeconds > 3600) { setError('Thời gian chờ cần là số giây nguyên từ 0 đến 3600.'); return; }
     if (typeof fieldDelayMs !== 'number' || !Number.isInteger(fieldDelayMs) || fieldDelayMs < 0 || fieldDelayMs > 60000) { setError('Thời gian chờ giữa các trường cần là số mili giây nguyên từ 0 đến 60000.'); return; }
     setPreferencesBusy(true);
     try {
-      const result = await window.desktop.savePreferences({ retentionHours, sendDelaySeconds, fieldDelayMs, deleteExpired, minimizeChrome });
+      const result = await window.desktop.savePreferences({ sendDelaySeconds, fieldDelayMs, minimizeChrome });
       if (result.ok) { setPreferencesOpen(false); setProgress(undefined); setHistoryRevision(value => value + 1); } else showError(result.error);
     } catch { setError('Không lưu được cài đặt.'); }
     finally { setPreferencesBusy(false); }
@@ -196,10 +203,10 @@ export function App() {
       return;
     }
     if (resetTarget === 'url') { updateSettings({ ...settings, sheetsUrl: '', formUrl: '', requireLogin: false, startRow: undefined }); reset(); }
-    else { updateSettings({ ...settings, mapping: {}, defaults: {}, aliases: {}, formatting: {} }); setProgress(undefined); setChoice(undefined); setError(undefined); setMappingCollapsed(false); }
+    else { updateSettings({ ...settings, mapping: {}, defaults: {}, aliases: {}, formatting: {}, sheetColumns: {} }); setProgress(undefined); setChoice(undefined); setError(undefined); setMappingCollapsed(false); }
     setResetTarget(undefined);
   }
-  const ready = data && data.form.fields.every(field => {
+  const ready = data && sheetColumns.result && sheetColumns.sentAt && ([sheetColumns.repeat, sheetColumns.repeatDays, sheetColumns.repeated].filter(Boolean).length % 3 === 0) && data.form.fields.every(field => {
     const fallback = defaults[field.id];
     return field.type !== 'unsupported' && (!field.required || mapping[field.id] ||
       (typeof fallback === 'string' ? fallback.trim() : ['date', 'datetime'].includes(field.type) && fallback?.currentDate));
@@ -217,14 +224,12 @@ export function App() {
           <NumberInput label="Giờ" value={scheduleHour} onChange={setScheduleHour} min={0} max={23} allowDecimal={false} disabled={scheduleBusy} />
           <NumberInput label="Phút" value={scheduleMinute} onChange={setScheduleMinute} min={0} max={59} allowDecimal={false} disabled={scheduleBusy} />
         </Group>}
-        <Text size="xs" c="dimmed">Lượt đầu chạy sau số phút đã chọn hoặc vào giờ hằng ngày trên máy. Mỗi lượt tải lại Sheets và chỉ nhận dòng có đủ giá trị đã mapping (có thể dùng mặc định), đúng lựa chọn/ngày và trường bắt buộc. Dòng chưa đủ sẽ chờ lượt sau. Giữ tool mở; đóng tool sẽ dừng lịch.</Text>
+        <Text size="xs" c="dimmed">Lượt đầu chạy sau số phút đã chọn hoặc vào giờ hằng ngày trên máy. Mỗi lượt tải lại Sheets và chỉ nhận dòng có đủ giá trị đã mapping (có thể dùng mặc định), đúng lựa chọn/ngày và trường bắt buộc. Dòng chưa đủ sẽ chờ lượt sau. Chỉ khi lịch chạy, dòng đã gửi sẽ được nhập lại nếu đủ Lặp lại/Lặp lại sau (ngày), đến hạn tính từ Gửi lúc và chưa đạt số lần tối đa. Giữ tool mở; đóng tool sẽ dừng lịch.</Text>
         <Button leftSection={<CalendarClock size={16} aria-hidden="true" />} onClick={startSchedule} loading={scheduleBusy} disabled={locked}>Bắt đầu</Button>
       </Stack>
     </Modal>
     <Modal opened={preferencesOpen} onClose={() => { if (!preferencesBusy) setPreferencesOpen(false); }} title="Cài đặt">
-      <Stack gap="sm"><Checkbox label="Xóa dữ liệu hết thời gian lưu" checked={deleteExpired} onChange={event => setDeleteExpired(event.currentTarget.checked)} disabled={preferencesBusy} />
-      <NumberInput label="Thời gian lưu dữ liệu đã gửi (giờ)" value={retentionHours} onChange={setRetentionHours} min={1} max={8760} allowDecimal={false} disabled={preferencesBusy || !deleteExpired} />
-      <Text size="sm" c="dimmed">Chỉ tự xóa khi bật checkbox. Mặc định 24 giờ. Dữ liệu hết thời gian lưu sẽ được xóa khỏi lịch sử và có thể gửi lại. Giảm thời gian lưu áp dụng ngay.</Text>
+      <Stack gap="sm"><Text size="sm" c="dimmed">Dữ liệu và trạng thái gửi được lưu trên Sheets.</Text>
       <NumberInput label="Thời gian chờ giữa mỗi lần gửi (giây)" value={sendDelaySeconds} onChange={setSendDelaySeconds} min={0} max={3600} allowDecimal={false} disabled={preferencesBusy} />
       <Text size="sm" c="dimmed">Chờ sau khi gửi thành công trước khi điền dòng tiếp theo. 0 giây để gửi liên tục.</Text>
       <NumberInput label="Thời gian chờ giữa mỗi trường (mili giây)" value={fieldDelayMs} onChange={setFieldDelayMs} min={0} max={60000} allowDecimal={false} disabled={preferencesBusy} />
@@ -234,7 +239,7 @@ export function App() {
       <Button leftSection={<Trash2 size={16} aria-hidden="true" />} color="red" variant="light" disabled={locked || preferencesBusy} onClick={() => { setPreferencesOpen(false); setResetTarget('profile'); }}>Xóa profile</Button></Stack>
     </Modal>
     <Modal opened={!!resetTarget} onClose={() => { if (!locked) setResetTarget(undefined); }} title={resetTarget === 'profile' ? 'Xác nhận xóa profile' : resetTarget === 'url' ? 'Xác nhận Reset URL' : 'Xác nhận Reset mapping'} closeOnClickOutside={!locked} closeOnEscape={!locked} withCloseButton={!locked}>
-      <Stack gap="sm"><Text size="sm">{resetTarget === 'profile' ? 'Đóng Chrome của tool và xóa toàn bộ dữ liệu app đã lưu: phiên đăng nhập, cookie, cache, bản nháp, URL, mapping, giá trị mặc định, lựa chọn đã xác nhận, lịch sử gửi và trạng thái chống gửi trùng. Mọi cài đặt trở về mặc định như mới. Thao tác này không thể hoàn tác. Phản hồi trên Google Form không bị xóa; dữ liệu cũ có thể được gửi lại sau khi đặt lại app.' : resetTarget === 'url' ? 'Xóa hai URL và tắt yêu cầu đăng nhập? Mapping được giữ để khôi phục khi nhập lại cùng nguồn/Form. Lịch sử gửi được giữ.' : 'Xóa tất cả đường nối, giá trị mặc định, tùy chọn làm đẹp và lựa chọn đã xác nhận? Lịch sử gửi được giữ.'}</Text>
+      <Stack gap="sm"><Text size="sm">{resetTarget === 'profile' ? 'Đóng Chrome của tool và xóa phiên đăng nhập, cookie, cache, URL, mapping và các cài đặt trên máy. Dữ liệu Sheets, phản hồi Form và dấu phục hồi các lượt chưa hoàn tất được giữ lại. Bạn sẽ cần đăng nhập và chọn mapping lại.' : resetTarget === 'url' ? 'Xóa hai URL và tắt yêu cầu đăng nhập? Mapping được giữ để khôi phục khi nhập lại cùng nguồn/Form.' : 'Xóa tất cả đường nối, cột trạng thái đã chọn, giá trị mặc định, tùy chọn làm đẹp và lựa chọn đã xác nhận?'}</Text>
       <Group justify="flex-end"><Button leftSection={<X size={16} aria-hidden="true" />} variant="default" disabled={locked} onClick={() => setResetTarget(undefined)}>Hủy</Button>
       <Button leftSection={resetTarget === 'profile' ? <Trash2 size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />} color="red" loading={busy === 'profile'} disabled={locked} onClick={confirmReset}>{resetTarget === 'profile' ? 'Xác nhận xóa profile' : 'Xác nhận reset'}</Button></Group></Stack>
     </Modal>
@@ -271,15 +276,19 @@ export function App() {
         }}>Dùng lựa chọn này</Button>
       </Stack>}
     </Alert>}
-    {pending.length > 0 && <Alert color="yellow" title="Đối chiếu dòng chưa rõ kết quả">
-      <Text size="sm">Chỉ xác nhận sau khi kiểm tra phản hồi với chủ Form và chắc chắn dòng chưa được gửi. Xác nhận cho phép tool gửi lại dòng này; nếu đã gửi sẽ bị trùng.</Text>
+    {pending.length > 0 && <Alert color="yellow" title="Hoàn tất các lượt đang chờ">
+      <Text size="sm">Lượt đã gửi chỉ cần cập nhật Sheets. Với lượt chưa rõ kết quả, đối chiếu phản hồi Form trước khi chọn đã gửi hoặc chưa gửi. Với lịch sử phiên bản cũ, tự cập nhật trạng thái trên Sheets trước khi xác nhận đã gửi.</Text>
       {pending.map(item => {
         const key = `${item.batch}:${item.row}`;
-        return <Group key={key} mt="xs">
-          <Checkbox label={`Tôi đã đối chiếu: dòng ${item.row} chưa được gửi (lượt ${item.batch.slice(0, 8)})`}
-            checked={confirmed.includes(key)} disabled={locked} onChange={event => { const checked = event.currentTarget.checked; setConfirmed(value => checked ? [...value, key] : value.filter(id => id !== key)); }} />
-          <Button leftSection={<Check size={14} aria-hidden="true" />} size="xs" disabled={locked || !confirmed.includes(key)} onClick={() => confirmNotSent(item)}>Xác nhận chưa gửi dòng {item.row}</Button>
-        </Group>;
+        return <Stack key={key} mt="xs" gap="xs">
+          <Text size="sm">Dòng {item.row} · {item.state === 'submitted' ? 'Đã gửi, đang chờ cập nhật Sheets' : 'Chưa rõ kết quả'}{item.sourceUrl ? ` · ${item.sourceUrl}` : ' · Lịch sử phiên bản cũ'}</Text>
+          {item.state === 'unknown' && <Checkbox label={`Tôi đã đối chiếu phản hồi dòng ${item.row} (lượt ${item.batch.slice(0, 8)})`}
+            checked={confirmed.includes(key)} disabled={locked} onChange={event => { const checked = event.currentTarget.checked; setConfirmed(value => checked ? [...value, key] : value.filter(id => id !== key)); }} />}
+          <Group>
+            <Button size="xs" disabled={locked || (!!item.sourceUrl && !data) || item.state === 'unknown' && !confirmed.includes(key)} onClick={() => reviewSubmission(item, true)}>{!item.sourceUrl ? 'Đã gửi và đã đánh dấu trên Sheets' : item.state === 'submitted' ? 'Cập nhật Sheets' : 'Đã gửi: cập nhật Sheets'}</Button>
+            {item.state === 'unknown' && <Button size="xs" variant="light" disabled={locked || !confirmed.includes(key)} onClick={() => reviewSubmission(item, false)}>Chưa gửi: cho phép gửi lại</Button>}
+          </Group>
+        </Stack>;
       })}
     </Alert>}
     {data && <Stack gap="sm">
@@ -292,7 +301,7 @@ export function App() {
         <Button leftSection={mappingCollapsed ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronUp size={14} aria-hidden="true" />} variant="subtle" size="xs" disabled={locked} aria-expanded={!mappingCollapsed} aria-controls="mapping-panel" onClick={() => setMappingCollapsed(value => !value)}>{mappingCollapsed ? 'Chỉnh sửa mapping' : 'Thu gọn mapping'}</Button></Group>
       </Group><Collapse expanded={!mappingCollapsed} id="mapping-panel"><Stack gap="sm" mt="sm">
       <Text size="xs" c="dimmed">Kéo từ chấm bên cột sang chấm bên trường. Bấm vào tên trường để chọn cột, xóa kết nối hoặc đặt giá trị mặc định; dùng được bằng bàn phím.</Text>
-      <MappingEditor data={data} formatting={formatting} onFormattingChange={value => { updateSettings({ ...settings, formatting: value }); setProgress(undefined); setChoice(undefined); setError(undefined); }} mapping={mapping} defaults={defaults} onDefaultsChange={value => { updateSettings({ ...settings, defaults: value }); setProgress(undefined); setChoice(undefined); setError(undefined); }} disabled={locked} onChange={value => { updateSettings({ ...settings, mapping: value }); setProgress(undefined); setChoice(undefined); setError(undefined); }} />
+      <MappingEditor sheetColumns={sheetColumns} onSheetColumnsChange={value => { updateSettings({ ...settings, sheetColumns: value }); setProgress(undefined); }} data={data} formatting={formatting} onFormattingChange={value => { updateSettings({ ...settings, formatting: value }); setProgress(undefined); setChoice(undefined); setError(undefined); }} mapping={mapping} defaults={defaults} onDefaultsChange={value => { updateSettings({ ...settings, defaults: value }); setProgress(undefined); setChoice(undefined); setError(undefined); }} disabled={locked} onChange={value => { updateSettings({ ...settings, mapping: value }); setProgress(undefined); setChoice(undefined); setError(undefined); }} />
       <Text size="xs" c="dimmed">Dòng đầu là tên cột. Ngày: DD/MM/YYYY hoặc YYYY-MM-DD, có thể kèm giờ. Form chỉ cần ngày thì bỏ giờ; thiếu giờ thì dùng 00:00:00. Nhiều lựa chọn: ngăn cách bằng dấu ; Tool khớp hoa/thường, dấu và lỗi gõ nhỏ; nếu chưa rõ, bạn chọn option một lần.</Text>
       </Stack></Collapse></Card>
       {(schedule.active || schedule.running) && <Stack gap={3} aria-live="polite">
@@ -308,7 +317,7 @@ export function App() {
         <ProgressBar value={progress.total ? progress.submitted / progress.total * 100 : 0} />
         <Text size="sm">Đã gửi {progress.submitted}/{progress.total} dòng.{progress.state === 'stopped' ? ' Đã dừng lịch.' : progress.state === 'submitted' ? ' Hoàn tất.' : progress.state === 'failed' ? progress.reason === 'SUBMIT_NOT_CLICKED' ? ` Chưa bấm Gửi dòng ${progress.row}. Đã dừng; kiểm tra Chrome và tải lại.` : ` Form từ chối dòng ${progress.row}. Đã dừng.` : progress.state === 'unknown' ? ` Chưa xác định kết quả dòng ${progress.row}. Cần đối chiếu trước khi gửi tiếp.` : ''}</Text>
       </Stack>}
-      <SheetDataTable columns={data.source.columns} formatting={formatting} mapping={mapping} defaults={defaults} aliases={aliases} revision={historyRevision} disabled={!!busy || scheduleBusy || schedule.running || preferencesBusy} readOnly={schedule.active} onCounts={setUnsentCount}
+      <SheetDataTable sheetColumns={sheetColumns} columns={data.source.columns} formatting={formatting} mapping={mapping} defaults={defaults} aliases={aliases} revision={historyRevision} disabled={!!busy || scheduleBusy || schedule.running || preferencesBusy} readOnly={schedule.active} onCounts={setUnsentCount}
         onDelete={() => { setHistoryRevision(value => value + 1); setProgress(undefined); }} />
     </Stack>}
   </Stack></Container>;

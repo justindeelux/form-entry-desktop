@@ -22,13 +22,14 @@ const api: DesktopApi = {
   deleteProfile: () => ipcRenderer.invoke('profile.delete', {}),
   reloadSheets: request => ipcRenderer.invoke('data.reloadSheets', request),
   load: request => ipcRenderer.invoke('data.load', request),
-  send: (mapping, defaults = {}, aliases = {}, formatting = {}) => ipcRenderer.invoke('data.send', { mapping, defaults, aliases, formatting }),
+  send: (mapping, defaults = {}, aliases = {}, formatting = {}, sheetColumns = {}) => ipcRenderer.invoke('data.send', { mapping, defaults, aliases, formatting, sheetColumns }),
   history: query => ipcRenderer.invoke('data.history', query),
-  deleteHistory: id => ipcRenderer.invoke('data.deleteHistory', { id }),
+  deleteHistory: (id, sheetColumns) => ipcRenderer.invoke('data.deleteHistory', { id, sheetColumns }),
   preferences: () => ipcRenderer.invoke('settings.read'),
   savePreferences: preferences => ipcRenderer.invoke('settings.save', preferences),
   pendingSubmissions: () => ipcRenderer.invoke('data.pending'),
-  confirmNotSent: request => ipcRenderer.invoke('data.confirmNotSent', request),
+  confirmNotSent: ({ batch, row }) => ipcRenderer.invoke('data.confirmNotSent', { batch, row }),
+  confirmSent: ({ batch, row }) => ipcRenderer.invoke('data.confirmSent', { batch, row }),
   onProgress(callback) {
     const listener = (_event: Electron.IpcRendererEvent, progress: Progress) => callback(progress);
     ipcRenderer.on('data.progress', listener);
