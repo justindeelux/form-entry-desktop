@@ -2,7 +2,7 @@ import { chromium, type BrowserContext, type Page } from 'playwright-core';
 import { z } from 'zod';
 import { FieldValidationError, fillRequestSchema, loadSchema, parseFormUrl, parseSheetsUrl, type Source } from '../shared/contracts';
 import { sourceFromCsv } from '../sources/sheets';
-import { assertSheetRow, loadSheets, writeSheetRow } from '../sources/google-sheets';
+import { assertSheetRow } from '../sources/google-sheets';
 import { sheetWriteSchema, validateSheetWrite } from '../shared/sheet-state';
 import { fillForm, inspectForm, prepareSubmit, submitForm } from './google-forms';
 import { setChromeWindowState } from './chrome-window';
@@ -19,7 +19,7 @@ let browserSettings: { chromePath: string; profilePath: string; loginUrl: string
 let page: Page | undefined;
 let sheetsPage: Page | undefined;
 let targetUrl: string | undefined;
-const openSchema = loadSchema.extend({ chromePath: z.string(), profilePath: z.string(), smoke: z.boolean(), minimizeChrome: z.boolean().default(false), allowEmpty: z.boolean().default(false) });
+const openSchema = loadSchema.extend({ chromePath: z.string(), profilePath: z.string(), smoke: z.boolean(), minimizeChrome: z.boolean().default(false), allowEmpty: z.boolean().default(false), externalSource: sourceSchema.optional() });
 let sourceSettings: z.infer<typeof openSchema> | undefined;
 let smokeSource: Source | undefined;
 const smokePath = () => join(dirname(sourceSettings!.profilePath), 'smoke-sheet.json');
@@ -29,7 +29,7 @@ async function readSource() {
     if (existsSync(smokePath())) smokeSource = sourceSchema.parse(JSON.parse(readFileSync(smokePath(), 'utf8')));
     return { ...structuredClone(smokeSource!), rows: structuredClone(smokeSource!.rows.filter(row => row.number >= (sourceSettings!.startRow ?? 2))) };
   }
-  return loadSheets(context, sheetsPage, sourceSettings.sheetsUrl, false, sourceSettings.startRow, true);
+  throw new Error('COMMAND_INVALID');
 }
 
 async function execute(command: string, args: unknown) {
@@ -39,7 +39,7 @@ async function execute(command: string, args: unknown) {
     const input = openSchema.parse(args);
     sourceSettings = input;
     const sheets = parseSheetsUrl(input.sheetsUrl);
-    browserSettings = { requireLogin: input.requireLogin, chromePath: input.chromePath, profilePath: input.profilePath, loginUrl: `https://accounts.google.com/ServiceLogin?continue=${encodeURIComponent(sheets.url)}` };
+    browserSettings = { requireLogin: input.requireLogin, chromePath: input.chromePath, profilePath: input.profilePath, loginUrl: `https://accounts.google.com/ServiceLogin?continue=${encodeURIComponent(parseFormUrl(input.formUrl))}` };
     await closeLoginBrowser(loginBrowser); loginBrowser = undefined;
     targetUrl = parseFormUrl(input.formUrl);
     if (!context) {
@@ -60,7 +60,8 @@ async function execute(command: string, args: unknown) {
       source = await readSource();
       if (!source.rows.length && !input.allowEmpty) throw new Error('SHEETS_EMPTY');
     } else {
-      source = await loadSheets(context, sheetsPage, input.sheetsUrl, input.requireLogin, input.startRow, input.allowEmpty);
+      if (!input.externalSource) throw new Error('COMMAND_INVALID');
+      source = input.externalSource;
     }
     if (command === 'reloadSheets') return source;
     page = page && !page.isClosed() ? page : await context.newPage();
@@ -84,7 +85,7 @@ async function execute(command: string, args: unknown) {
       writeFileSync(smokePath(), JSON.stringify(smokeSource), { mode: 0o600 });
       return readSource();
     }
-    return writeSheetRow(context, sheetsPage, input, readSource);
+    throw new Error('COMMAND_INVALID');
   }
   if (command === 'readSheets') return readSource();
   if (!page || page.isClosed() || !targetUrl) {

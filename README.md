@@ -4,12 +4,12 @@ A local desktop app that reads a Google Sheets tab and submits its rows to a Goo
 
 ## Usage
 
-1. Open the desired Sheets tab and copy its full URL, including `gid`.
-2. Paste the Sheets URL and Form URL into the app. Sign in with a Google account that can edit the tab, then load the data.
+1. Click **Kết nối Google**. In the system browser, sign in and select the Sheets file you want the app to access.
+2. Select **Tab Sheets**, paste the Form URL, then load the data. You may paste another tab URL within an already authorized file. To grant access to another file, click **Chọn Sheets**. The connected account must be able to edit the file.
 3. Map columns to Form fields and optionally set defaults or formatting. In **Cột lưu trạng thái trên Sheets**, explicitly select **Kết quả** and **Gửi lúc**. Each control must use a distinct column; the app never chooses columns from header names.
 4. Submit the rows, or schedule submissions while the app is open.
 
-Google Chrome must be installed. Row 1 is the header; blank rows are skipped. Only single-page Forms are supported. Sheets input is limited to 10 MB, 200 columns, and 10,000 data rows. No Google API key is required.
+Google Chrome must be installed. Row 1 is the header; blank rows are skipped. Only single-page Forms are supported. Sheets input is limited to 10 MB, 200 columns, and 10,000 data rows. Sheets are read and updated through the official API; Chrome is used only for Google Forms. The **Yêu cầu đăng nhập Google** option applies to Form login in the private Chrome profile, which is separate from the Sheets OAuth connection.
 
 A tab with headers and no data rows can be loaded or reloaded. Configure mapping and start a schedule while it is empty; later scheduled passes read newly added rows.
 
@@ -17,11 +17,15 @@ After a confirmed submission, the app writes **Đã gửi** and a full timestamp
 
 For automatic repeats, explicitly select all three additional columns: **Lặp lại** (maximum additional sends), **Lặp lại sau (ngày)** (whole days, at least 1), and **Đã nhập lại (số lần)** (completed additional sends). Repeats run only while a schedule is active. A blank limit or interval skips repetition; a blank completed count means zero. Each scheduled pass sends at most one repeat per due row, increments its counter and replaces its sent timestamp. The next due date is based on this latest timestamp. Invalid repeat controls or a missing/invalid timestamp on otherwise eligible rows stop the schedule. Days and times use the computer's local timezone.
 
-Row data and sent state stay on Sheets. The app keeps configuration, its private Chrome profile, and a small JSON recovery journal locally. This journal contains row hashes, positions and control updates, without storing Form payloads. If a Form was submitted but the Sheet write failed, **Cập nhật Sheets** completes the write without submitting again. Uncertain submissions require checking the Form responses before choosing **đã gửi** or **chưa gửi**. Keep the original row position and contents until recovery finishes.
+Row data and sent state stay on Sheets. The app keeps configuration, its private Chrome profile, an encrypted Google refresh token, and a small JSON recovery journal locally. OAuth tokens never enter the renderer or localStorage; **Ngắt kết nối** revokes the connection and removes the local token. The system credential store must support encryption (Linux plaintext fallback is refused). This journal contains row hashes, positions and control updates, without storing Form payloads. If a Form was submitted but the Sheet write failed, **Cập nhật Sheets** completes the write without submitting again. Uncertain submissions require checking the Form responses before choosing **đã gửi** or **chưa gửi**. Keep the original row position and contents until recovery finishes.
 
 Existing SQLite history is opened read-only for migration. On the next send with explicit control mapping, matching old sent records are marked on Sheets before new submissions; the old database is preserved. Unknown legacy submissions still require review. **Settings → Xóa profile** clears login and local preferences; Sheet data and unresolved recovery records remain.
 
 Run only one app against a given tab at a time. The app checks for edits before submitting and writing, but Google Form submission and Sheet updates are separate operations, so simultaneous writers cannot be made atomic. Keep the tab editable and the app open while its schedule runs.
+
+## Google Cloud configuration
+
+The app owner configures one Desktop OAuth client before distributing the app. End users do not create Cloud projects or supply credentials. See [Google Cloud setup](docs/google-cloud-setup.md). Download the Desktop client JSON as `google-oauth.json` in the project root before packaging; it is ignored by Git. Development also accepts `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`. No Picker API key or hosted callback server is needed.
 
 ## Development
 

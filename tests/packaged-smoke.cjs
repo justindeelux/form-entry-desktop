@@ -12,6 +12,12 @@ const { tmpdir } = require('node:os');
   try {
     const page = await application.firstWindow();
     await page.getByRole('button', { name: 'Tải dữ liệu', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Chọn Sheets', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Tab Sheets', exact: true }).waitFor();
+    assert.equal(await page.getByLabel('URL Google Sheets').inputValue(), 'https://docs.google.com/spreadsheets/d/local-fixture/edit?gid=0');
+    await page.getByRole('button', { name: 'Reset URL', exact: true }).click();
+    await page.getByRole('button', { name: 'Xác nhận reset', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Tab Sheets', exact: true }).waitFor({ state: 'hidden' });
     assert.equal(await page.evaluate(() => typeof window.require), 'undefined');
     assert.equal((await page.evaluate(() => window.desktop.checkForUpdates())).error, 'UPDATE_UNAVAILABLE');
     assert.deepEqual((await page.evaluate(() => window.desktop.updateState())).value, { status: 'unsupported' });

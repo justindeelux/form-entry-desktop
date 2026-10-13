@@ -4,7 +4,7 @@ import { Alert, Button, Card, Checkbox, Collapse, Container, Image, Modal, Numbe
 import appIcon from '../../assets/app-icon.png';
 import { version } from '../../package.json';
 import { scheduleRuleSchema, type ScheduleState } from '../shared/contracts';
-import type { DesktopApi, LoadedData, Progress, PendingSubmission, ValidationDetails, UpdateState } from '../shared/contracts';
+import type { DesktopApi, LoadedData, Progress, PendingSubmission, ValidationDetails, UpdateState, GoogleConnection } from '../shared/contracts';
 import { SheetDataTable } from './SheetDataTable';
 import { MappingEditor } from './MappingEditor';
 import { UpdateModal } from './UpdateModal';
@@ -12,6 +12,19 @@ import { mappingBinding, readSettings, restoreSheetColumns, restoreAliases, rest
 
 declare global { interface Window { desktop: DesktopApi } }
 const errors: Record<string, string> = {
+  GOOGLE_NOT_CONFIGURED: 'Kết nối Google chưa được thiết lập. Liên hệ người cung cấp ứng dụng.',
+  GOOGLE_CONFIG_INVALID: 'Cấu hình kết nối Google không hợp lệ. Liên hệ người cung cấp ứng dụng.',
+  GOOGLE_CONNECT_REQUIRED: 'Bấm Kết nối Google và chọn file Sheets trước khi tải dữ liệu.',
+  GOOGLE_RECONNECT_REQUIRED: 'Kết nối Google đã hết hiệu lực. Kết nối lại và chọn file Sheets.',
+  GOOGLE_CONNECT_CANCELLED: 'Đã hủy kết nối Google.',
+  GOOGLE_CONNECT_TIMEOUT: 'Đã hết thời gian chờ kết nối Google. Bấm Kết nối Google để thử lại.',
+  GOOGLE_CONNECTION_FAILED: 'Không kết nối được Google. Kiểm tra mạng rồi thử lại.',
+  GOOGLE_PICK_FAILED: 'Chưa nhận được file Sheets đã chọn. Bấm Kết nối Google để thử lại.',
+  GOOGLE_SCOPE_INVALID: 'Quyền kết nối Google chưa phù hợp. Kết nối lại hoặc liên hệ người cung cấp ứng dụng.',
+  GOOGLE_TOKEN_STORAGE_UNAVAILABLE: 'Không thể lưu kết nối Google an toàn trên máy này. Kiểm tra kho mật khẩu của hệ điều hành.',
+  SHEETS_API_ACCESS_DENIED: 'Không truy cập được file Sheets. Bấm Chọn Sheets để cấp quyền cho đúng file và kiểm tra tài khoản có quyền chỉnh sửa.',
+  SHEETS_API_UNAVAILABLE: 'Google Sheets API tạm thời không phản hồi hoặc giới hạn lượt truy cập. Chờ rồi thử lại; lượt đã gửi chỉ cần Cập nhật Sheets.',
+  SHEETS_API_REQUEST_INVALID: 'Không đọc hoặc cập nhật được vùng Sheets. Kiểm tra tab, cột mapping và quyền sửa vùng dữ liệu.',
   SHEET_MAPPING_INVALID: 'Chọn hai cột Kết quả/Gửi lúc riêng biệt. Nếu dùng nhập lại, chọn đủ ba cột Lặp lại/Lặp lại sau/Đã nhập lại; mỗi cột chỉ dùng cho một mục.',
   SHEET_STATUS_INVALID: 'Cột Kết quả chỉ nhận Đã gửi, Chưa gửi hoặc ô trống. Kiểm tra mapping và dữ liệu.',
   SHEET_REPEAT_INVALID: 'Lặp lại và Đã nhập lại cần là số nguyên không âm; Lặp lại sau cần số ngày nguyên từ 1. Gửi lúc phải là ngày giờ hợp lệ.',
@@ -52,6 +65,9 @@ const errors: Record<string, string> = {
   UPDATE_UNAVAILABLE: 'Cập nhật tự động chỉ dùng được với bản Windows đã cài bằng Setup.exe. Bản portable cần tải lại thủ công.',
 };
 export function App() {
+  const [google, setGoogle] = useState<GoogleConnection>({ configured: false, connected: false });
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleTabs, setGoogleTabs] = useState<{ id: number; title: string }[]>([]);
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle' });
   const [updateOpen, setUpdateOpen] = useState(false);
   const [initial] = useState(() => readSettings(localStorage));
@@ -85,7 +101,26 @@ export function App() {
   const [error, setError] = useState<string>();
   const [choice, setChoice] = useState<ValidationDetails>();
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
-  const locked = !!busy || schedule.active || schedule.running || scheduleBusy || update.status === 'installing';
+  const locked = googleBusy || !!busy || schedule.active || schedule.running || scheduleBusy || update.status === 'installing';
+  useEffect(() => {
+    void window.desktop.googleState().then(result => { if (result.ok) setGoogle(result.value); else showError(result.error); }).catch(() => setError('Không đọc được kết nối Google.'));
+  }, []);
+  async function connectGoogle() {
+    setGoogleBusy(true); setError(undefined);
+    try {
+      const result = await window.desktop.connectGoogle();
+      if (result.ok) { setGoogle(result.value.connection); setGoogleTabs(result.value.tabs); updateSettings({ ...settings, sheetsUrl: result.value.url }); reset(); }
+      else showError(result.error);
+      const state = await window.desktop.googleState(); if (state.ok) setGoogle(state.value);
+    } catch { setError('Không kết nối được Google.'); }
+    finally { setGoogleBusy(false); }
+  }
+  async function disconnectGoogle() {
+    setGoogleBusy(true); setError(undefined);
+    try { const result = await window.desktop.disconnectGoogle(); if (result.ok) { setGoogle(result.value); setGoogleTabs([]); reset(); } else showError(result.error); }
+    catch { setError('Không ngắt được kết nối Google.'); }
+    finally { setGoogleBusy(false); }
+  }
   useEffect(() => {
     let received = false, disposed = false;
     function receive(state: UpdateState) { setUpdate(state); if (state.status === 'available') setUpdateOpen(true); }
@@ -202,7 +237,7 @@ export function App() {
       finally { setBusy(undefined); setResetTarget(undefined); }
       return;
     }
-    if (resetTarget === 'url') { updateSettings({ ...settings, sheetsUrl: '', formUrl: '', requireLogin: false, startRow: undefined }); reset(); }
+    if (resetTarget === 'url') { setGoogleTabs([]); updateSettings({ ...settings, sheetsUrl: '', formUrl: '', requireLogin: false, startRow: undefined }); reset(); }
     else { updateSettings({ ...settings, mapping: {}, defaults: {}, aliases: {}, formatting: {}, sheetColumns: {} }); setProgress(undefined); setChoice(undefined); setError(undefined); setMappingCollapsed(false); }
     setResetTarget(undefined);
   }
@@ -249,15 +284,21 @@ export function App() {
         <Button leftSection={collapsed ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronUp size={16} aria-hidden="true" />} variant="subtle" size="xs" disabled={locked} aria-expanded={!collapsed} aria-controls="source-inputs"
           onClick={() => setCollapsed(value => !value)}>{collapsed ? 'Chỉnh sửa URL' : 'Thu gọn'}</Button>
       </Group>
+      <Group mt="sm" gap="xs">
+        <Button size="sm" variant="light" onClick={connectGoogle} loading={googleBusy} disabled={locked}>{google.connected ? 'Chọn Sheets' : 'Kết nối Google'}</Button>
+        {googleBusy ? <Button size="sm" variant="subtle" onClick={() => { void window.desktop.cancelGoogle().catch(() => setError('Không hủy được kết nối.')); }}>Hủy kết nối</Button> : google.connected && <Button size="sm" variant="subtle" disabled={locked} onClick={disconnectGoogle}>Ngắt kết nối</Button>}
+        <Text size="xs" c="dimmed">{google.connected ? 'Đã kết nối Google · Sheets dùng API' : 'Kết nối Google để cấp quyền cho file Sheets bạn chọn.'}</Text>
+      </Group>
       <Collapse expanded={!collapsed} id="source-inputs"><Stack gap="sm" mt="sm">
       <TextInput label="URL Google Sheets" placeholder="https://docs.google.com/spreadsheets/d/…/edit?gid=0" value={sheetsUrl} disabled={locked}
-        onChange={event => { updateSettings({ ...settings, sheetsUrl: event.currentTarget.value }); reset(); }} />
+        onChange={event => { setGoogleTabs([]); updateSettings({ ...settings, sheetsUrl: event.currentTarget.value }); reset(); }} />
+      {googleTabs.length > 0 && <Select label="Tab Sheets" value={new URL(sheetsUrl).searchParams.get('gid')} data={googleTabs.map(tab => ({ value: String(tab.id), label: tab.title }))} disabled={locked} onChange={value => { if (value !== null) { const url = new URL(sheetsUrl); url.searchParams.set('gid', value); updateSettings({ ...settings, sheetsUrl: url.href }); reset(); } }} />}
       <TextInput label="URL Google Form" placeholder="https://docs.google.com/forms/d/e/…/viewform" value={formUrl} disabled={locked}
         onChange={event => { updateSettings({ ...settings, formUrl: event.currentTarget.value }); reset(); }} />
       <NumberInput label="Dòng bắt đầu đọc trên Sheets" description="Không bắt buộc. Ví dụ 101 để đọc từ dòng 101; dòng 1 vẫn dùng làm tiêu đề cột." placeholder="Từ đầu" value={startRow ?? ''} min={1} max={10001} allowDecimal={false} disabled={locked} onChange={value => { updateSettings({ ...settings, startRow: typeof value === 'number' ? value : undefined }); reset(); }} />
-      <Checkbox label="Yêu cầu đăng nhập Google" checked={requireLogin} disabled={locked} onChange={event => { updateSettings({ ...settings, requireLogin: event.currentTarget.checked }); reset(); }} />
+      <Checkbox label="Yêu cầu đăng nhập Google" description="Dành cho Google Form trong Chrome; Sheets sử dụng kết nối Google ở trên." checked={requireLogin} disabled={locked} onChange={event => { updateSettings({ ...settings, requireLogin: event.currentTarget.checked }); reset(); }} />
       <Group gap="sm">
-        <Button leftSection={<Download size={16} aria-hidden="true" />} flex={1} onClick={() => load()} loading={busy === 'load'} disabled={locked || !sheetsUrl.trim() || !formUrl.trim()}>Tải dữ liệu</Button>
+        <Button leftSection={<Download size={16} aria-hidden="true" />} flex={1} onClick={() => load()} loading={busy === 'load'} disabled={locked || !google.connected || !sheetsUrl.trim() || !formUrl.trim()}>Tải dữ liệu</Button>
         <Button leftSection={<RotateCcw size={16} aria-hidden="true" />} variant="light" disabled={locked} onClick={() => setResetTarget('url')}>Reset URL</Button>
       </Group>
     </Stack></Collapse></Card>

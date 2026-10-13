@@ -95,7 +95,13 @@ export const scheduleStartSchema = z.object({ source: loadSchema, send: sendSche
 export type ScheduleRequest = z.infer<typeof scheduleStartSchema>;
 export type ScheduleState = { active: boolean; running: boolean; startedAt?: number; nextRunAt?: number; error?: string; details?: ValidationDetails; data?: LoadedData };
 export type UpdateState = { status: 'unsupported' | 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error' | 'installing'; version?: string; percent?: number; releaseNotes?: string };
+export type GoogleConnection = { configured: boolean; connected: boolean };
+export type GoogleSelection = { connection: GoogleConnection; url: string; tabs: { id: number; title: string }[] };
 export interface DesktopApi {
+  googleState(): Promise<Result<GoogleConnection>>;
+  connectGoogle(): Promise<Result<GoogleSelection>>;
+  cancelGoogle(): Promise<Result<void>>;
+  disconnectGoogle(): Promise<Result<GoogleConnection>>;
   checkForUpdates(): Promise<Result<void>>;
   installUpdate(): Promise<Result<void>>;
   updateState(): Promise<Result<UpdateState>>;

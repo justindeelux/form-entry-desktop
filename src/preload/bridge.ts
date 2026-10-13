@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi, Progress, ScheduleState, UpdateState } from '../shared/contracts';
 
 const api: DesktopApi = {
+  googleState: () => ipcRenderer.invoke('google.state', {}),
+  connectGoogle: () => ipcRenderer.invoke('google.connect', {}),
+  cancelGoogle: () => ipcRenderer.invoke('google.cancel', {}),
+  disconnectGoogle: () => ipcRenderer.invoke('google.disconnect', {}),
   checkForUpdates: () => ipcRenderer.invoke('update.check', {}),
   installUpdate: () => ipcRenderer.invoke('update.install', {}),
   updateState: () => ipcRenderer.invoke('update.state', {}),

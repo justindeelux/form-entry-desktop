@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, safeStorage, shell, type IpcMainInvokeEvent } from 'electron';
 import { chmodSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,6 +18,9 @@ import { completeScheduledRows } from '../shared/schedule';
 import { mapRow } from '../shared/mapping';
 import { sameSheetCell, sheetCell, sheetStatus, sheetTimestamp, repeatDue, submissionUpdates, validateSheetColumns } from '../shared/sheet-state';
 import { createUpdater } from './updater';
+import { createGoogleAuth, readGoogleConfig } from './google-auth';
+import { createSheetsApi } from '../sources/sheets-api';
+import { assertSheetRow } from '../sources/google-sheets';
 
 const smoke = process.argv.includes('--smoke-test');
 if (smoke) app.setPath('userData', process.env.FORM_ENTRY_SMOKE_DATA ?? mkdtempSync(join(tmpdir(), 'form-entry-smoke-')));
@@ -29,6 +32,14 @@ else void app.whenReady().then(async () => {
   chmodSync(dataPath, 0o700);
   const store = openState(join(dataPath, 'state.json'), join(dataPath, 'phase0.sqlite'));
   const automation = createAutomation(smoke);
+  let googleConfig: ReturnType<typeof readGoogleConfig>, googleConfigError = false;
+  try { if (!smoke) googleConfig = readGoogleConfig(join(app.getAppPath(), 'google-oauth.json')); } catch { googleConfigError = true; }
+  const google = createGoogleAuth(googleConfig, join(dataPath, 'google-token.enc'), {
+    openExternal: url => shell.openExternal(url), fetch,
+    available: () => safeStorage.isEncryptionAvailable() && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'),
+    encrypt: value => safeStorage.encryptString(value), decrypt: value => safeStorage.decryptString(value),
+  });
+  const sheetsApi = createSheetsApi(google);
   const rendererFile = join(__dirname, '../renderer/index.html');
   const rendererUrl = pathToFileURL(rendererFile).href;
   const icon = join(app.getAppPath(), 'assets/app-icon.png');
@@ -79,7 +90,7 @@ else void app.whenReady().then(async () => {
       if (!trusted(event)) return { ok: false, error: 'IPC_DENIED' };
       if (closing) return { ok: false, error: 'APP_CLOSING' };
       if (busy) return { ok: false, error: 'BUSY' };
-      if (scheduler.state().active && ['data.load', 'data.reloadSheets', 'data.send', 'profile.delete', 'settings.save', 'data.confirmNotSent', 'data.confirmSent', 'data.deleteHistory', 'schedule.start'].includes(channel)) return { ok: false, error: 'SCHEDULE_ACTIVE' };
+      if (scheduler.state().active && ['data.load', 'data.reloadSheets', 'data.send', 'profile.delete', 'settings.save', 'data.confirmNotSent', 'data.confirmSent', 'data.deleteHistory', 'schedule.start', 'google.connect', 'google.disconnect'].includes(channel)) return { ok: false, error: 'SCHEDULE_ACTIVE' };
       busy = true;
       try { active = action(input); return { ok: true, value: await active }; }
       catch (error) {
@@ -90,6 +101,24 @@ else void app.whenReady().then(async () => {
       } finally { busy = false; active = undefined; }
     });
   }
+  handle('google.state', async input => { z.object({}).strict().parse(input); if (googleConfigError) throw new Error('GOOGLE_CONFIG_INVALID'); return smoke ? { configured: true, connected: true } : google.status(); });
+  handle('google.connect', async input => {
+    z.object({}).strict().parse(input);
+    if (smoke) return { connection: { configured: true, connected: true }, url: 'https://docs.google.com/spreadsheets/d/local-fixture/edit?gid=0', tabs: [{ id: 0, title: 'Trang tính1' }] };
+    if (googleConfigError) throw new Error('GOOGLE_CONFIG_INVALID');
+    const file = await google.connect(), tabs = await sheetsApi.tabs(file);
+    if (!tabs.length) throw new Error('SHEETS_EMPTY');
+    loaded = undefined;
+    return { connection: google.status(), tabs, url: `https://docs.google.com/spreadsheets/d/${file}/edit?gid=${tabs[0].id}` };
+  });
+  handle('google.disconnect', async input => { z.object({}).strict().parse(input); await google.disconnect(); loaded = undefined; return google.status(); });
+  ipcMain.handle('google.cancel', (event, input) => {
+    if (!trusted(event)) return { ok: false, error: 'IPC_DENIED' };
+    z.object({}).strict().parse(input); google.cancel(); return { ok: true };
+  });
+  async function readSource() {
+    return smoke ? sourceSchema.parse(await automation.request('readSheets')) : sheetsApi.read(sourceUrl, sourceRequest?.startRow);
+  }
   async function load(input: unknown, sheetsOnly = false, scheduled = false) {
     const previous = loaded;
     const request = loadSchema.parse(input);
@@ -98,7 +127,8 @@ else void app.whenReady().then(async () => {
     loaded = undefined; sourceUrl = sheets; formUrl = form; sourceRequest = request;
     const chromePath = findChrome();
     if (!chromePath) throw new Error('BROWSER_NOT_FOUND');
-    const result = await automation.request(sheetsOnly ? 'reloadSheets' : 'load', { sheetsUrl: sourceUrl, formUrl, requireLogin: request.requireLogin, startRow: request.startRow, minimizeChrome: store.preferences().minimizeChrome, chromePath, profilePath: join(dataPath, 'chrome-profile'), smoke, allowEmpty: true });
+    const externalSource = smoke ? undefined : await sheetsApi.read(sourceUrl, request.startRow);
+    const result = !smoke && sheetsOnly ? externalSource : await automation.request(sheetsOnly ? 'reloadSheets' : 'load', { sheetsUrl: sourceUrl, formUrl, requireLogin: request.requireLogin, startRow: request.startRow, minimizeChrome: store.preferences().minimizeChrome, chromePath, profilePath: join(dataPath, 'chrome-profile'), smoke, allowEmpty: true, ...(externalSource ? { externalSource } : {}) });
     loaded = loadedSchema.parse(sheetsOnly ? { source: result, form: previous!.form } : result);
     if (!scheduled && !closing && !window.isDestroyed()) { window.show(); window.focus(); }
     return loaded;
@@ -108,9 +138,8 @@ else void app.whenReady().then(async () => {
   const scope = () => historyScope(sourceUrl, formUrl);
   async function writeRow(row: { number: number; values: string[] }, sheetColumns: SheetColumns, updates: Record<string, string>) {
     if (!loaded) throw new Error('DATA_NOT_LOADED');
-    const source = sourceSchema.parse(await automation.request('writeSheetRow', {
-      sheetsUrl: sourceUrl, source: { ...loaded.source, rows: [row] }, row: row.number, sheetColumns, updates,
-    }, 180000));
+    const input = { sheetsUrl: sourceUrl, source: { ...loaded.source, rows: [row] }, row: row.number, sheetColumns, updates };
+    const source = smoke ? sourceSchema.parse(await automation.request('writeSheetRow', input, 180000)) : await sheetsApi.write(input, sourceRequest?.startRow);
     loaded = { ...loaded, source };
   }
   async function syncCheckpoint(checkpoint: Checkpoint) {
@@ -173,7 +202,7 @@ else void app.whenReady().then(async () => {
   handle('data.history', async input => {
     if (!loaded) throw new Error('DATA_NOT_LOADED');
     const query = historyQuerySchema.parse(input);
-    const source = sourceSchema.parse(await automation.request('readSheets'));
+    const source = await readSource();
     const fresh = { ...loaded, source };
     if (columnsSignature(fresh) !== columnsSignature(loaded)) { loaded = undefined; throw new Error('FORM_SCHEMA_CHANGED'); }
     loaded = fresh;
@@ -288,7 +317,8 @@ else void app.whenReady().then(async () => {
       if (signal?.aborted) break;
       const updates = submissionUpdates(snapshot.source, row.values, sheetColumns, row.repeat, new Date());
       const sheetRequest = { sheetsUrl: sourceUrl, source: { ...snapshot.source, rows: [row] }, row: row.number, sheetColumns, updates };
-      await automation.request('checkSheetRow', sheetRequest);
+      if (smoke) await automation.request('checkSheetRow', sheetRequest);
+      else assertSheetRow(await readSource(), sheetRequest);
       if (closing) throw new Error('APP_CLOSING');
       if (signal?.aborted) break;
       store.begin({ batch, row: row.number, state: 'unknown', sourceUrl, formUrl, id: row.id, columns: columnsSignature(snapshot), sheetColumns,
@@ -338,7 +368,7 @@ else void app.whenReady().then(async () => {
     if (mayQuit) return;
     event.preventDefault();
     if (closing) return;
-    closing = true; closingSignal.abort(); scheduler.stop(); updater.stop();
+    closing = true; google.cancel(); closingSignal.abort(); scheduler.stop(); updater.stop();
     void (async () => {
       try { await active; } catch { /* The IPC handler reports the error. */ }
       try { await automation.request('close'); } catch { /* Browser may already be closed. */ }
