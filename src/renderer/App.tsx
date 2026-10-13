@@ -274,7 +274,7 @@ export function App() {
       <Button leftSection={<Trash2 size={16} aria-hidden="true" />} color="red" variant="light" disabled={locked || preferencesBusy} onClick={() => { setPreferencesOpen(false); setResetTarget('profile'); }}>Xóa profile</Button></Stack>
     </Modal>
     <Modal opened={!!resetTarget} onClose={() => { if (!locked) setResetTarget(undefined); }} title={resetTarget === 'profile' ? 'Xác nhận xóa profile' : resetTarget === 'url' ? 'Xác nhận Reset URL' : 'Xác nhận Reset mapping'} closeOnClickOutside={!locked} closeOnEscape={!locked} withCloseButton={!locked}>
-      <Stack gap="sm"><Text size="sm">{resetTarget === 'profile' ? 'Đóng Chrome của tool và xóa phiên đăng nhập, cookie, cache, URL, mapping và các cài đặt trên máy. Dữ liệu Sheets, phản hồi Form và dấu phục hồi các lượt chưa hoàn tất được giữ lại. Bạn sẽ cần đăng nhập và chọn mapping lại.' : resetTarget === 'url' ? 'Xóa hai URL và tắt yêu cầu đăng nhập? Mapping được giữ để khôi phục khi nhập lại cùng nguồn/Form.' : 'Xóa tất cả đường nối, cột trạng thái đã chọn, giá trị mặc định, tùy chọn làm đẹp và lựa chọn đã xác nhận?'}</Text>
+      <Stack gap="sm"><Text size="sm">{resetTarget === 'profile' ? 'Đóng Chrome của tool và xóa phiên đăng nhập Form, cookie, cache, URL, mapping và các cài đặt trên máy. Kết nối Sheets OAuth, dữ liệu Sheets, phản hồi Form và các lượt đang chờ được giữ lại. Bạn sẽ cần đăng nhập Form và chọn mapping lại. Để đổi tài khoản Sheets, dùng Ngắt kết nối.' : resetTarget === 'url' ? 'Xóa hai URL và tắt yêu cầu đăng nhập? Mapping được giữ để khôi phục khi nhập lại cùng nguồn/Form.' : 'Xóa tất cả đường nối, cột trạng thái đã chọn, giá trị mặc định, tùy chọn làm đẹp và lựa chọn đã xác nhận?'}</Text>
       <Group justify="flex-end"><Button leftSection={<X size={16} aria-hidden="true" />} variant="default" disabled={locked} onClick={() => setResetTarget(undefined)}>Hủy</Button>
       <Button leftSection={resetTarget === 'profile' ? <Trash2 size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />} color="red" loading={busy === 'profile'} disabled={locked} onClick={confirmReset}>{resetTarget === 'profile' ? 'Xác nhận xóa profile' : 'Xác nhận reset'}</Button></Group></Stack>
     </Modal>
@@ -318,7 +318,7 @@ export function App() {
       </Stack>}
     </Alert>}
     {pending.length > 0 && <Alert color="yellow" title="Hoàn tất các lượt đang chờ">
-      <Text size="sm">Lượt đã gửi chỉ cần cập nhật Sheets. Với lượt chưa rõ kết quả, đối chiếu phản hồi Form trước khi chọn đã gửi hoặc chưa gửi. Với lịch sử phiên bản cũ, tự cập nhật trạng thái trên Sheets trước khi xác nhận đã gửi.</Text>
+      <Text size="sm">Các lượt đang chờ vẫn được giữ khi xóa profile để tránh gửi trùng. Lượt đã gửi chỉ cần cập nhật Sheets. Với lượt chưa rõ kết quả, đối chiếu phản hồi Form trước khi chọn đã gửi hoặc chưa gửi. Với lịch sử phiên bản cũ, tự cập nhật trạng thái trên Sheets trước khi xác nhận đã gửi.</Text>
       {pending.map(item => {
         const key = `${item.batch}:${item.row}`;
         return <Stack key={key} mt="xs" gap="xs">

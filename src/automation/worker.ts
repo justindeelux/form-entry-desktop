@@ -7,7 +7,7 @@ import { sheetWriteSchema, validateSheetWrite } from '../shared/sheet-state';
 import { fillForm, inspectForm, prepareSubmit, submitForm } from './google-forms';
 import { setChromeWindowState } from './chrome-window';
 import { fixtureHtml, fixtureUrl } from './fixture';
-import { closeLoginBrowser, openLoginBrowser } from './login-browser';
+import { closeLoginBrowser, openLoginBrowser, requireGoogleSession } from './login-browser';
 import type { ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -50,6 +50,7 @@ async function execute(command: string, args: unknown) {
       });
       context.on('close', () => { context = undefined; page = undefined; sheetsPage = undefined; });
     }
+    if (!input.smoke) await requireGoogleSession(context, input.requireLogin);
     sheetsPage = sheetsPage && !sheetsPage.isClosed() ? sheetsPage : context.pages()[0] ?? await context.newPage();
     await setChromeWindowState(sheetsPage, input.minimizeChrome);
     let source;
@@ -93,6 +94,7 @@ async function execute(command: string, args: unknown) {
     throw new Error('BROWSER_CLOSED');
   }
   if (command === 'prepare') {
+    if (!sourceSettings?.smoke && context && browserSettings) await requireGoogleSession(context, browserSettings.requireLogin);
     const input = fillRequestSchema.parse(args);
     await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
     if (new URL(page.url()).hostname === 'accounts.google.com') throw new Error('LOGIN_REQUIRED');
@@ -103,6 +105,7 @@ async function execute(command: string, args: unknown) {
   }
   if (command === 'submit') {
     try {
+      if (!sourceSettings?.smoke && context && browserSettings) await requireGoogleSession(context, browserSettings.requireLogin);
       const input = fillRequestSchema.parse(args);
       if (new URL(page.url()).hostname === 'accounts.google.com') return 'not_sent';
       if (parseFormUrl(page.url()) !== targetUrl || (await inspectForm(page)).fingerprint !== input.fingerprint) return 'not_sent';
