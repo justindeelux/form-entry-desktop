@@ -1,7 +1,7 @@
 {
   "name": "form-entry-desktop",
   "productName": "Form Entry Desktop",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "Minimal Google Sheets to Google Forms desktop tool",
   "private": true,
   "author": "Form Entry Desktop",

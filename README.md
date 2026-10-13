@@ -71,7 +71,7 @@ node tests/packaged-close.cjs <electron-executable> --development
 
 ## Releases and updates
 
-The **Release Windows** workflow runs only for `v*` tags or manual dispatch. It tests and builds Windows x64, checks the packaged and installed apps with local fixtures, and uploads the installer and portable ZIP. Manual runs create artifacts only.
+The **Release Windows** workflow runs only for `v*` tags or manual dispatch. It tests and builds Windows x64, checks the packaged and installed apps with local fixtures, and uploads the installer and portable ZIP. Manual runs create artifacts only. Set the repository Actions secret `GOOGLE_OAUTH_JSON` to the downloaded Desktop OAuth JSON; the workflow includes it in the app and checks the packaged configuration.
 
 To prepare a release, bump `version` in `package.json` and `package-lock.json`, commit, then push a matching tag:
 
