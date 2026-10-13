@@ -18,7 +18,7 @@ export function openState(path: string, legacyPath?: string) {
   const state = stateSchema.parse(existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { preferences: {}, pending: [], migrated: [] });
   const save = () => {
     writeFileSync(`${path}.tmp`, JSON.stringify(stateSchema.parse(state)), { mode: 0o600 });
-    const file = openSync(`${path}.tmp`, 'r');
+    const file = openSync(`${path}.tmp`, 'r+');
     try { fsyncSync(file); } finally { closeSync(file); }
     renameSync(`${path}.tmp`, path);
     if (process.platform !== 'win32') {
